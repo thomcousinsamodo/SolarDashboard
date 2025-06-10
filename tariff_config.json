@@ -1,0 +1,38 @@
+{
+  "tariff_periods": [
+    {
+      "name": "Flexible Octopus (Pre-Agile)",
+      "tariff_code": "E-1R-FLEX-22-11-25-B",
+      "start_date": "2023-06-01",
+      "end_date": "2024-06-05",
+      "is_variable": false,
+      "is_export": false,
+      "fixed_rate": 28.62,
+      "standing_charge": 54.85,
+      "description": "Fixed rate tariff before switching to Agile on 6th June 2024"
+    },
+    {
+      "name": "Agile Octopus (From June 2024)",
+      "tariff_code": "E-1R-AGILE-24-10-01-B",
+      "start_date": "2024-06-06",
+      "end_date": null,
+      "is_variable": true,
+      "is_export": false,
+      "fixed_rate": null,
+      "standing_charge": 54.85,
+      "description": "Variable rate tariff with 30-minute pricing from 6th June 2024"
+    },
+    {
+      "name": "Export Tariff (Ongoing)",
+      "tariff_code": "E-1R-OUTGOING-VAR-24-10-26-B",
+      "start_date": "2023-06-01",
+      "end_date": null,
+      "is_variable": false,
+      "is_export": true,
+      "fixed_rate": 15.0,
+      "standing_charge": null,
+      "description": "Fixed export rate throughout all periods"
+    }
+  ],
+  "last_updated": "2025-06-10T13:58:30.890255"
+}

@@ -1,0 +1,15 @@
+{
+  "pricing_mode": "bill_accurate",
+  "config_file": "flexible_tariff_config.json",
+  "processor_class": "BillAccuratePricingProcessor",
+  "coverage_start": "2023-04-05",
+  "coverage_end": "2025-05-04",
+  "total_periods": 11,
+  "features": [
+    "Time-of-use day/night rates",
+    "Historical rate accuracy",
+    "Quarterly rate changes",
+    "Standing charge variations",
+    "Bill-matching precision"
+  ]
+}

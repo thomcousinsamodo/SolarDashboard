@@ -25,6 +25,17 @@ except ImportError:
     print("⚠️  Price calculations not available")
     PRICING_AVAILABLE = False
 
+# Import enhanced pricing with tariff transitions
+try:
+    from enhanced_dashboard_pricing import EnhancedDashboardPricing
+    enhanced_pricing = EnhancedDashboardPricing()
+    ENHANCED_PRICING_AVAILABLE = True
+    print("✅ Enhanced bill-accurate pricing loaded")
+except ImportError:
+    print("⚠️  Enhanced pricing not available")
+    enhanced_pricing = None
+    ENHANCED_PRICING_AVAILABLE = False
+
 # Load data
 def load_data():
     """Load consumption data from CSV files"""
@@ -97,24 +108,35 @@ stats = calculate_summary_stats(daily_df)
 # Initialize price calculator with real API pricing
 if PRICING_AVAILABLE:
     try:
-        # Get real pricing configuration from API
-        real_pricing_config = get_real_pricing_config()
-        price_calculator = PriceCalculator(real_pricing_config)
-        price_stats = price_calculator.get_summary_stats(daily_df) if not daily_df.empty else {}
-        
-        # Show pricing info in console
-        data_source = real_pricing_config.get('data_source', 'default')
-        if data_source == 'octopus_api':
-            print("💰 Using real Octopus Energy API pricing:")
-            print(f"   Import: {real_pricing_config['import_rate']}p/kWh")
-            print(f"   Export: {real_pricing_config['export_rate']}p/kWh")
-            print(f"   Standing: {real_pricing_config['standing_charge_daily']}p/day")
+        # Use enhanced pricing if available, otherwise fall back to simple pricing
+        if ENHANCED_PRICING_AVAILABLE:
+            price_calculator = enhanced_pricing
+            price_stats = enhanced_pricing.get_summary_stats(daily_df) if not daily_df.empty else {}
+            print("💰 Using enhanced bill-accurate pricing:")
+            if price_stats:
+                print(f"   Import rate: {price_stats.get('import_rate', 0):.2f}p/kWh")
+                print(f"   Export rate: {price_stats.get('export_rate', 0):.2f}p/kWh")
+                print(f"   Standing charge: {price_stats.get('standing_charge_daily', 0):.2f}p/day")
+                print(f"   Latest tariff: {price_stats.get('tariff_code', 'Unknown')}")
         else:
-            print("📊 Using default UK energy tariffs")
+            # Get real pricing configuration from API
+            real_pricing_config = get_real_pricing_config()
+            price_calculator = PriceCalculator(real_pricing_config)
+            price_stats = price_calculator.get_summary_stats(daily_df) if not daily_df.empty else {}
+            
+            # Show pricing info in console
+            data_source = real_pricing_config.get('data_source', 'default')
+            if data_source == 'octopus_api':
+                print("💰 Using real Octopus Energy API pricing:")
+                print(f"   Import: {real_pricing_config['import_rate']}p/kWh")
+                print(f"   Export: {real_pricing_config['export_rate']}p/kWh")
+                print(f"   Standing: {real_pricing_config['standing_charge_daily']}p/day")
+            else:
+                print("📊 Using default UK energy tariffs")
             
     except Exception as e:
-        print(f"⚠️  Error initializing real pricing: {e}")
-        price_calculator = PriceCalculator()
+        print(f"⚠️  Error initializing pricing: {e}")
+        price_calculator = PriceCalculator() if not ENHANCED_PRICING_AVAILABLE else enhanced_pricing
         price_stats = price_calculator.get_summary_stats(daily_df) if not daily_df.empty else {}
 else:
     price_calculator = None
@@ -338,7 +360,8 @@ app.layout = dbc.Container([
                                 options=[
                                     {'label': 'Daily Overview', 'value': 'daily'},
                                     {'label': 'Hourly Analysis', 'value': 'hourly'},
-                                    {'label': 'Net Energy Flow', 'value': 'net_flow'}
+                                    {'label': 'Net Energy Flow', 'value': 'net_flow'},
+                                    {'label': 'Price Analysis', 'value': 'price_analysis', 'disabled': not ENHANCED_PRICING_AVAILABLE}
                                 ],
                                 value='daily',
                                 clearable=False
@@ -559,6 +582,8 @@ def update_charts(chart_type, start_date, end_date, chart_options):
         main_fig = create_hourly_analysis_chart(raw_df, start_date, end_date)
     elif chart_type == 'net_flow':
         main_fig = create_net_flow_chart(filtered_df, show_temperature, use_rolling_avg, show_price_view)
+    elif chart_type == 'price_analysis' and ENHANCED_PRICING_AVAILABLE:
+        main_fig = create_price_analysis_chart(filtered_df, start_date, end_date, use_rolling_avg)
     else:
         main_fig = create_empty_chart("No data available")
     
@@ -619,55 +644,81 @@ def update_charts(chart_type, start_date, end_date, chart_options):
         savings_rate_text = f"{savings_rate:.1f}%"
         
         # Create pricing info content
-        pricing_config = price_calculator.config if price_calculator else {}
-        data_source = pricing_config.get('data_source', 'default')
-        
-        if data_source == 'octopus_api':
+        if ENHANCED_PRICING_AVAILABLE and hasattr(price_calculator, 'bill_processor'):
+            # Enhanced bill-accurate pricing
             pricing_info = html.Div([
                 html.P([
-                    html.Strong("🌐 Real Octopus Energy API Data"), 
+                    html.Strong("🧾 Bill-Accurate Pricing System"), 
                     html.Br(),
-                    html.Small(f"Last updated: {pricing_config.get('last_updated', 'Unknown')[:16].replace('T', ' ')}", className="text-muted")
+                    html.Small(f"Real tariff data from your energy bills", className="text-muted")
                 ], className="mb-2"),
                 dbc.Row([
                     dbc.Col([
-                        html.P([html.Strong("Import Rate: "), f"{pricing_config.get('import_rate', 0)}p/kWh"], className="mb-1"),
-                        html.P([html.Strong("Export Rate: "), f"{pricing_config.get('export_rate', 0)}p/kWh"], className="mb-1"),
+                        html.P([html.Strong("Current Import Rate: "), f"{filtered_price_stats.get('import_rate', 0):.2f}p/kWh"], className="mb-1"),
+                        html.P([html.Strong("Current Export Rate: "), f"{filtered_price_stats.get('export_rate', 0):.2f}p/kWh"], className="mb-1"),
                     ], width=6),
                     dbc.Col([
-                        html.P([html.Strong("Standing Charge: "), f"{pricing_config.get('standing_charge_daily', 0)}p/day"], className="mb-1"),
-                        html.P([html.Strong("Currency: "), pricing_config.get('currency', 'GBP')], className="mb-1"),
+                        html.P([html.Strong("Standing Charge: "), f"{filtered_price_stats.get('standing_charge_daily', 0):.2f}p/day"], className="mb-1"),
+                        html.P([html.Strong("Active Tariff: "), filtered_price_stats.get('tariff_code', 'Unknown')], className="mb-1"),
                     ], width=6)
                 ]),
                 html.Hr(),
                 html.P([
-                    html.I(className="fas fa-info-circle"),
-                    " These are your actual Octopus Energy tariff rates. Costs shown match your real bills."
-                ], className="text-info mb-0")
+                    html.I(className="fas fa-check-circle"),
+                    " Using historical tariff data extracted from your bills. Costs match your real energy bills penny-for-penny."
+                ], className="text-success mb-0")
             ])
         else:
-            pricing_info = html.Div([
-                html.P([
-                    html.Strong("📊 Default UK Energy Tariffs"),
-                    html.Br(),
-                    html.Small("Generic pricing - connect API for real rates", className="text-muted")
-                ], className="mb-2"),
-                dbc.Row([
-                    dbc.Col([
-                        html.P([html.Strong("Import Rate: "), f"{pricing_config.get('import_rate', 0)}p/kWh"], className="mb-1"),
-                        html.P([html.Strong("Export Rate: "), f"{pricing_config.get('export_rate', 0)}p/kWh"], className="mb-1"),
-                    ], width=6),
-                    dbc.Col([
-                        html.P([html.Strong("Standing Charge: "), f"{pricing_config.get('standing_charge_daily', 0)}p/day"], className="mb-1"),
-                        html.P([html.Strong("Currency: "), pricing_config.get('currency', 'GBP')], className="mb-1"),
-                    ], width=6)
-                ]),
-                html.Hr(),
-                html.P([
-                    html.I(className="fas fa-exclamation-triangle"),
-                    " Set OCTOPUS_API_KEY and OCTOPUS_ACCOUNT_NUMBER environment variables for real pricing."
-                ], className="text-warning mb-0")
-            ])
+            # Fall back to simple pricing
+            pricing_config = price_calculator.config if price_calculator else {}
+            data_source = pricing_config.get('data_source', 'default')
+            
+            if data_source == 'octopus_api':
+                pricing_info = html.Div([
+                    html.P([
+                        html.Strong("🌐 Real Octopus Energy API Data"), 
+                        html.Br(),
+                        html.Small(f"Last updated: {pricing_config.get('last_updated', 'Unknown')[:16].replace('T', ' ')}", className="text-muted")
+                    ], className="mb-2"),
+                    dbc.Row([
+                        dbc.Col([
+                            html.P([html.Strong("Import Rate: "), f"{pricing_config.get('import_rate', 0)}p/kWh"], className="mb-1"),
+                            html.P([html.Strong("Export Rate: "), f"{pricing_config.get('export_rate', 0)}p/kWh"], className="mb-1"),
+                        ], width=6),
+                        dbc.Col([
+                            html.P([html.Strong("Standing Charge: "), f"{pricing_config.get('standing_charge_daily', 0)}p/day"], className="mb-1"),
+                            html.P([html.Strong("Currency: "), pricing_config.get('currency', 'GBP')], className="mb-1"),
+                        ], width=6)
+                    ]),
+                    html.Hr(),
+                    html.P([
+                        html.I(className="fas fa-info-circle"),
+                        " These are your actual Octopus Energy tariff rates. Costs shown match your real bills."
+                    ], className="text-info mb-0")
+                ])
+            else:
+                pricing_info = html.Div([
+                    html.P([
+                        html.Strong("📊 Default UK Energy Tariffs"),
+                        html.Br(),
+                        html.Small("Generic pricing - connect API for real rates", className="text-muted")
+                    ], className="mb-2"),
+                    dbc.Row([
+                        dbc.Col([
+                            html.P([html.Strong("Import Rate: "), f"{pricing_config.get('import_rate', 0)}p/kWh"], className="mb-1"),
+                            html.P([html.Strong("Export Rate: "), f"{pricing_config.get('export_rate', 0)}p/kWh"], className="mb-1"),
+                        ], width=6),
+                        dbc.Col([
+                            html.P([html.Strong("Standing Charge: "), f"{pricing_config.get('standing_charge_daily', 0)}p/day"], className="mb-1"),
+                            html.P([html.Strong("Currency: "), pricing_config.get('currency', 'GBP')], className="mb-1"),
+                        ], width=6)
+                    ]),
+                    html.Hr(),
+                    html.P([
+                        html.I(className="fas fa-exclamation-triangle"),
+                        " Set OCTOPUS_API_KEY and OCTOPUS_ACCOUNT_NUMBER environment variables for real pricing."
+                    ], className="text-warning mb-0")
+                ])
     else:
         total_bill = "£0.00"
         total_earnings = "£0.00"
@@ -868,6 +919,22 @@ def create_daily_overview_chart(df, show_temperature=False, use_rolling_avg=Fals
                 fig.update_yaxes(title_text='Energy (kWh)', secondary_y=False)
             fig.update_yaxes(title_text='Temperature (°C)', secondary_y=True)
     
+    # Add enhanced pricing features if available
+    if show_price_view and ENHANCED_PRICING_AVAILABLE:
+        start_date_str = df['date'].min().strftime('%Y-%m-%d') if not df.empty else None
+        end_date_str = df['date'].max().strftime('%Y-%m-%d') if not df.empty else None
+        
+        if start_date_str and end_date_str:
+            # Add tariff transitions
+            fig = enhanced_pricing.add_tariff_transitions_to_figure(
+                fig, start_date_str, end_date_str, 'daily'
+            )
+            
+            # Add price overlay to show rate changes
+            fig = enhanced_pricing.add_price_overlay_to_figure(
+                fig, start_date_str, end_date_str, 'daily', use_rolling_avg
+            )
+    
     # Update layout
     if show_price_view:
         title = 'Daily Energy Costs vs Earnings'
@@ -878,6 +945,8 @@ def create_daily_overview_chart(df, show_temperature=False, use_rolling_avg=Fals
         title += ' (with 7-day Rolling Average)'
     if show_temperature:
         title += ' & Temperature'
+    if show_price_view and ENHANCED_PRICING_AVAILABLE:
+        title += ' | Tariff Transitions'
     
     y_axis_title = 'Cost (£)' if show_price_view else 'Energy (kWh)'
     
@@ -887,7 +956,7 @@ def create_daily_overview_chart(df, show_temperature=False, use_rolling_avg=Fals
         yaxis_title=y_axis_title if not show_temperature else None,
         template='plotly_white',
         hovermode='x unified',
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="right", x=1)
     )
     
     return fig
@@ -930,8 +999,23 @@ def create_hourly_analysis_chart(df, start_date, end_date):
         opacity=0.7
     ))
     
+    # Add pricing overlay for hourly view if enhanced pricing is available
+    if ENHANCED_PRICING_AVAILABLE:
+        # Get date range for pricing data
+        start_date_str = filtered_df['interval_start'].min().strftime('%Y-%m-%d') if not filtered_df.empty else None
+        end_date_str = filtered_df['interval_start'].max().strftime('%Y-%m-%d') if not filtered_df.empty else None
+        
+        if start_date_str and end_date_str:
+            fig = enhanced_pricing.add_price_overlay_to_figure(
+                fig, start_date_str, end_date_str, 'hourly', False
+            )
+    
+    title = 'Average Hourly Energy Profile'
+    if ENHANCED_PRICING_AVAILABLE:
+        title += ' with Pricing'
+    
     fig.update_layout(
-        title='Average Hourly Energy Profile',
+        title=title,
         xaxis_title='Hour of Day',
         yaxis_title='Average Energy (kWh)',
         template='plotly_white',
@@ -1077,6 +1161,22 @@ def create_net_flow_chart(df, show_temperature=False, use_rolling_avg=False, sho
     # Add zero line
     fig.add_hline(y=0, line_dash="dash", line_color="black", opacity=0.5)
     
+    # Add enhanced pricing features if available
+    if show_price_view and ENHANCED_PRICING_AVAILABLE:
+        start_date_str = df['date'].min().strftime('%Y-%m-%d') if not df.empty else None
+        end_date_str = df['date'].max().strftime('%Y-%m-%d') if not df.empty else None
+        
+        if start_date_str and end_date_str:
+            # Add tariff transitions
+            fig = enhanced_pricing.add_tariff_transitions_to_figure(
+                fig, start_date_str, end_date_str, 'net_flow'
+            )
+            
+            # Add price overlay
+            fig = enhanced_pricing.add_price_overlay_to_figure(
+                fig, start_date_str, end_date_str, 'daily', use_rolling_avg
+            )
+    
     # Update layout
     if show_price_view:
         title = 'Net Energy Cost (Import Cost - Export Earnings)'
@@ -1089,6 +1189,8 @@ def create_net_flow_chart(df, show_temperature=False, use_rolling_avg=False, sho
         title += ' (with 7-day Rolling Average)'
     if show_temperature:
         title += ' & Temperature'
+    if show_price_view and ENHANCED_PRICING_AVAILABLE:
+        title += ' | Tariff Transitions'
     
     y_axis_title = 'Net Cost (£)' if show_price_view else 'Net Energy (kWh)'
     
@@ -1236,6 +1338,105 @@ def create_consumption_pattern_chart(df, use_rolling_avg=False):
         xaxis_title='Date',
         yaxis_title=yaxis_title,
         template='plotly_white'
+    )
+    
+    return fig
+
+def create_price_analysis_chart(df, start_date, end_date, use_rolling_avg=False):
+    """Create dedicated price analysis chart showing rate variations and transitions"""
+    if not ENHANCED_PRICING_AVAILABLE:
+        return create_empty_chart("Enhanced pricing not available")
+    
+    start_date_str = start_date if start_date else (df['date'].min().strftime('%Y-%m-%d') if not df.empty else '2023-01-01')
+    end_date_str = end_date if end_date else (df['date'].max().strftime('%Y-%m-%d') if not df.empty else '2025-12-31')
+    
+    # Create price series
+    price_df = enhanced_pricing.bill_processor.create_price_series(start_date_str, end_date_str, 'D')
+    
+    if price_df.empty:
+        return create_empty_chart("No pricing data available for selected period")
+    
+    fig = go.Figure()
+    
+    # Group by tariff codes to show different periods
+    tariff_codes = price_df['tariff_code'].unique()
+    colors_list = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd', '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+    
+    for i, tariff_code in enumerate(tariff_codes):
+        tariff_data = price_df[price_df['tariff_code'] == tariff_code].copy()
+        color = colors_list[i % len(colors_list)]
+        
+        # Check if this is an Agile tariff
+        is_agile = enhanced_pricing.bill_processor.is_agile_tariff(tariff_code)
+        line_style = 'solid' if not is_agile else 'dash'
+        
+        fig.add_trace(go.Scatter(
+            x=tariff_data['timestamp'],
+            y=tariff_data['rate_pence_per_kwh'],
+            mode='lines+markers',
+            name=tariff_code,
+            line=dict(color=color, width=3, dash=line_style),
+            marker=dict(size=6),
+            hovertemplate=f'<b>{tariff_code}</b><br>Date: %{{x}}<br>Rate: %{{y:.2f}}p/kWh<br>Type: %{{customdata}}<extra></extra>',
+            customdata=[tariff_data.iloc[0]['rate_type']] * len(tariff_data)
+        ))
+    
+    # Add rolling average if requested
+    if use_rolling_avg and len(price_df) > 7:
+        price_df_sorted = price_df.sort_values('timestamp')
+        price_df_sorted['price_rolling'] = price_df_sorted['rate_pence_per_kwh'].rolling(window=7, center=True).mean()
+        
+        fig.add_trace(go.Scatter(
+            x=price_df_sorted['timestamp'],
+            y=price_df_sorted['price_rolling'],
+            mode='lines',
+            name='7-day Average Rate',
+            line=dict(color='purple', width=4),
+            hovertemplate='<b>7-day Average</b><br>Date: %{x}<br>Rate: %{y:.2f}p/kWh<extra></extra>'
+        ))
+    
+    # Add tariff transitions
+    fig = enhanced_pricing.add_tariff_transitions_to_figure(fig, start_date_str, end_date_str, 'price_analysis')
+    
+    # Add rate bands for context
+    fig.add_hrect(
+        y0=0, y1=15,
+        fillcolor="rgba(40, 167, 69, 0.1)",
+        layer="below",
+        line_width=0,
+        annotation_text="Low Rate Zone",
+        annotation_position="top left"
+    )
+    
+    fig.add_hrect(
+        y0=15, y1=30,
+        fillcolor="rgba(255, 193, 7, 0.1)",
+        layer="below",
+        line_width=0,
+        annotation_text="Medium Rate Zone",
+        annotation_position="top left"
+    )
+    
+    fig.add_hrect(
+        y0=30, y1=100,
+        fillcolor="rgba(220, 53, 69, 0.1)",
+        layer="below",
+        line_width=0,
+        annotation_text="High Rate Zone",
+        annotation_position="top left"
+    )
+    
+    title = '⚡ Energy Rate Analysis & Tariff Transitions'
+    if use_rolling_avg:
+        title += ' (with 7-day Average)'
+    
+    fig.update_layout(
+        title=title,
+        xaxis_title='Date',
+        yaxis_title='Rate (p/kWh)',
+        template='plotly_white',
+        hovermode='x unified',
+        legend=dict(orientation="h", yanchor="top", y=-0.1, xanchor="right", x=1)
     )
     
     return fig

@@ -44,6 +44,214 @@ class OctopusPricingAPI:
             self.authenticated = True
         else:
             self.authenticated = False
+    
+    def get_historical_pricing_data(self, tariff_code: str, start_date: datetime, end_date: datetime, 
+                                  is_export: bool = False) -> pd.DataFrame:
+        """
+        Fetch historical pricing data for a variable tariff (like Agile)
+        
+        Args:
+            tariff_code: The tariff code (e.g., E-1R-AGILE-24-10-01-B)
+            start_date: Start date for pricing data
+            end_date: End date for pricing data
+            is_export: Whether this is an export tariff
+            
+        Returns:
+            DataFrame with columns: valid_from, valid_to, rate_inc_vat, rate_exc_vat
+        """
+        print(f"🔍 Fetching historical pricing data for {tariff_code}...")
+        
+        # Extract product code from tariff code
+        parts = tariff_code.split('-')
+        if len(parts) >= 4:
+            product_code = '-'.join(parts[2:-1])
+        else:
+            print(f"❌ Invalid tariff code format: {tariff_code}")
+            return pd.DataFrame()
+        
+        # Build URL for pricing data
+        url = f"{self.base_url}/products/{product_code}/electricity-tariffs/{tariff_code}/standard-unit-rates/"
+        
+        all_rates = []
+        current_date = start_date
+        
+        # Fetch data in chunks to handle large date ranges
+        while current_date < end_date:
+            chunk_end = min(current_date + timedelta(days=30), end_date)
+            
+            params = {
+                'period_from': current_date.strftime('%Y-%m-%dT00:00:00Z'),
+                'period_to': chunk_end.strftime('%Y-%m-%dT23:59:59Z'),
+                'page_size': 1500  # Maximum allowed
+            }
+            
+            try:
+                print(f"  📅 Fetching rates for {current_date.date()} to {chunk_end.date()}")
+                response = self.session.get(url, params=params)
+                response.raise_for_status()
+                
+                data = response.json()
+                rates = data.get('results', [])
+                all_rates.extend(rates)
+                
+                # Handle pagination
+                next_url = data.get('next')
+                while next_url:
+                    response = self.session.get(next_url)
+                    response.raise_for_status()
+                    data = response.json()
+                    rates = data.get('results', [])
+                    all_rates.extend(rates)
+                    next_url = data.get('next')
+                
+                # Rate limiting
+                time.sleep(0.2)
+                
+            except requests.exceptions.RequestException as e:
+                print(f"❌ Error fetching pricing data: {e}")
+                break
+            
+            current_date = chunk_end
+        
+        if not all_rates:
+            print(f"⚠️  No pricing data found for {tariff_code}")
+            return pd.DataFrame()
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(all_rates)
+        
+        # Convert timestamps
+        df['valid_from'] = pd.to_datetime(df['valid_from'], utc=True)
+        df['valid_to'] = pd.to_datetime(df['valid_to'], utc=True)
+        
+        # Rename columns for clarity
+        df = df.rename(columns={
+            'value_inc_vat': 'rate_inc_vat',
+            'value_exc_vat': 'rate_exc_vat'
+        })
+        
+        # Sort by valid_from
+        df = df.sort_values('valid_from').reset_index(drop=True)
+        
+        print(f"✅ Retrieved {len(df)} pricing periods for {tariff_code}")
+        print(f"   📅 Date range: {df['valid_from'].min()} to {df['valid_to'].max()}")
+        print(f"   💰 Rate range: {df['rate_inc_vat'].min():.2f}p - {df['rate_inc_vat'].max():.2f}p/kWh")
+        
+        return df[['valid_from', 'valid_to', 'rate_inc_vat', 'rate_exc_vat']]
+    
+    def match_consumption_with_pricing(self, consumption_df: pd.DataFrame, 
+                                     import_pricing_df: pd.DataFrame,
+                                     export_pricing_df: Optional[pd.DataFrame] = None,
+                                     standing_charge_daily: float = 60.0) -> pd.DataFrame:
+        """
+        Match consumption data with actual pricing data by timestamp
+        
+        Args:
+            consumption_df: DataFrame with consumption data (must have interval_start, consumption, meter_type)
+            import_pricing_df: DataFrame with import pricing data
+            export_pricing_df: DataFrame with export pricing data (optional)
+            standing_charge_daily: Daily standing charge in pence
+            
+        Returns:
+            DataFrame with consumption data plus actual pricing and costs
+        """
+        print("🔗 Matching consumption data with pricing...")
+        
+        if consumption_df.empty:
+            return pd.DataFrame()
+        
+        # Make a copy to avoid modifying original
+        result_df = consumption_df.copy()
+        
+        # Ensure interval_start is datetime with timezone
+        if 'interval_start' not in result_df.columns:
+            print("❌ Consumption data must have 'interval_start' column")
+            return pd.DataFrame()
+        
+        result_df['interval_start'] = pd.to_datetime(result_df['interval_start'], utc=True)
+        
+        # Initialize pricing columns
+        result_df['rate_inc_vat'] = None
+        result_df['rate_exc_vat'] = None
+        result_df['cost_exc_vat'] = None
+        result_df['cost_inc_vat'] = None
+        result_df['standing_charge'] = 0.0
+        
+        # Process import data
+        import_mask = result_df['meter_type'] == 'import'
+        if import_mask.any() and not import_pricing_df.empty:
+            print(f"  📊 Processing {import_mask.sum()} import records...")
+            result_df = self._match_pricing_for_meter_type(
+                result_df, import_pricing_df, import_mask, standing_charge_daily
+            )
+        
+        # Process export data
+        export_mask = result_df['meter_type'] == 'export'
+        if export_mask.any() and export_pricing_df is not None and not export_pricing_df.empty:
+            print(f"  📊 Processing {export_mask.sum()} export records...")
+            result_df = self._match_pricing_for_meter_type(
+                result_df, export_pricing_df, export_mask, 0.0  # No standing charge for export
+            )
+        elif export_mask.any():
+            print("  ⚠️  No export pricing data available, using fixed rate")
+            # Use fixed export rate if no pricing data available
+            fixed_export_rate = 15.0  # Default export rate
+            result_df.loc[export_mask, 'rate_inc_vat'] = fixed_export_rate
+            result_df.loc[export_mask, 'rate_exc_vat'] = fixed_export_rate / 1.05
+            result_df.loc[export_mask, 'cost_inc_vat'] = result_df.loc[export_mask, 'consumption'] * fixed_export_rate
+            result_df.loc[export_mask, 'cost_exc_vat'] = result_df.loc[export_mask, 'cost_inc_vat'] / 1.05
+        
+        # Calculate totals
+        matched_records = result_df['rate_inc_vat'].notna().sum()
+        total_records = len(result_df)
+        match_percentage = (matched_records / total_records * 100) if total_records > 0 else 0
+        
+        print(f"✅ Pricing match complete:")
+        print(f"   📊 {matched_records}/{total_records} records matched ({match_percentage:.1f}%)")
+        
+        if matched_records < total_records:
+            unmatched = total_records - matched_records
+            print(f"   ⚠️  {unmatched} records without pricing data (may be outside pricing data range)")
+        
+        return result_df
+    
+    def _match_pricing_for_meter_type(self, result_df: pd.DataFrame, pricing_df: pd.DataFrame, 
+                                    mask: pd.Series, standing_charge_daily: float) -> pd.DataFrame:
+        """Helper method to match pricing for a specific meter type"""
+        
+        for idx in result_df[mask].index:
+            interval_start = result_df.at[idx, 'interval_start']
+            consumption = result_df.at[idx, 'consumption']
+            
+            # Find matching pricing period
+            matching_rates = pricing_df[
+                (pricing_df['valid_from'] <= interval_start) & 
+                (pricing_df['valid_to'] > interval_start)
+            ]
+            
+            if not matching_rates.empty:
+                # Use the first matching rate (should only be one)
+                rate_inc_vat = matching_rates.iloc[0]['rate_inc_vat']
+                rate_exc_vat = matching_rates.iloc[0]['rate_exc_vat']
+                
+                # Calculate costs
+                cost_inc_vat = consumption * rate_inc_vat
+                cost_exc_vat = consumption * rate_exc_vat
+                
+                # Add standing charge for import records (once per day)
+                standing_charge = 0.0
+                if standing_charge_daily > 0:
+                    # Add standing charge proportionally (assuming 48 half-hours per day)
+                    standing_charge = standing_charge_daily / 48.0
+                
+                # Update the result DataFrame
+                result_df.at[idx, 'rate_inc_vat'] = rate_inc_vat
+                result_df.at[idx, 'rate_exc_vat'] = rate_exc_vat
+                result_df.at[idx, 'cost_inc_vat'] = cost_inc_vat
+                result_df.at[idx, 'cost_exc_vat'] = cost_exc_vat
+                result_df.at[idx, 'standing_charge'] = standing_charge
+        
+        return result_df
             
     def get_account_tariffs(self) -> List[TariffInfo]:
         """Get current tariff information from account data"""
@@ -91,7 +299,7 @@ class OctopusPricingAPI:
         except requests.exceptions.RequestException as e:
             print(f"❌ Error fetching account tariffs: {e}")
             return []
-    
+
     def _get_tariff_details(self, tariff_code: str, is_export: bool) -> Optional[TariffInfo]:
         """Get detailed tariff information from tariff code"""
         try:
@@ -201,7 +409,7 @@ class OctopusPricingAPI:
             })
             print(f"✅ Using real import tariff: {import_tariff.tariff_code}")
             if import_tariff.is_variable:
-                print(f"   Variable rate tariff (will use daily averages)")
+                print(f"   Variable rate tariff (historical pricing can be fetched)")
             else:
                 print(f"   Fixed rate: {import_tariff.unit_rate}p/kWh")
             print(f"   Standing charge: {import_tariff.standing_charge}p/day")
