@@ -245,6 +245,9 @@ backup_data/
 api_keys.py
 credentials.py
 secrets.py
+octopus_credentials.py
+pricing_config.json
+*_api_keys.py
 
 # Dashboard temporary files
 dash_assets/
