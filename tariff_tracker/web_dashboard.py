@@ -50,6 +50,7 @@ def index():
                     <a class="nav-link" href="/periods">Periods</a>
                     <a class="nav-link" href="/add-period">Add Period</a>
                     <a class="nav-link" href="/rate-lookup">Rate Lookup</a>
+                    <a class="nav-link" href="/charts">Charts</a>
                 </div>
             </div>
         </nav>
@@ -211,9 +212,10 @@ def periods():
             <div class="container">
                 <a class="navbar-brand" href="/"><i class="fas fa-bolt me-2"></i>Octopus Tariff Tracker</a>
                 <div class="navbar-nav">
-                    <a class="nav-link active" href="/periods">Periods</a>
+                    <a class="nav-link" href="/periods">Periods</a>
                     <a class="nav-link" href="/add-period">Add Period</a>
                     <a class="nav-link" href="/rate-lookup">Rate Lookup</a>
+                    <a class="nav-link" href="/charts">Charts</a>
                 </div>
             </div>
         </nav>
@@ -323,6 +325,7 @@ def add_period_form():
                     <a class="nav-link" href="/periods">Periods</a>
                     <a class="nav-link active" href="/add-period">Add Period</a>
                     <a class="nav-link" href="/rate-lookup">Rate Lookup</a>
+                    <a class="nav-link" href="/charts">Charts</a>
                 </div>
             </div>
         </nav>
@@ -904,7 +907,8 @@ def rate_lookup_form():
                 <div class="navbar-nav">
                     <a class="nav-link" href="/periods">Periods</a>
                     <a class="nav-link" href="/add-period">Add Period</a>
-                    <a class="nav-link active" href="/rate-lookup">Rate Lookup</a>
+                    <a class="nav-link" href="/rate-lookup">Rate Lookup</a>
+                    <a class="nav-link" href="/charts">Charts</a>
                 </div>
             </div>
         </nav>

@@ -130,37 +130,88 @@
                 <h5><i class="fas fa-chart-line me-2"></i>Rate Timeline</h5>
             </div>
             <div class="card-body">
-                <!-- Chart Controls -->
-                <div class="row mb-3">
-                    <div class="col-md-2">
-                        <label for="rateChartType" class="form-label">Chart Type</label>
-                        <select class="form-select" id="rateChartType" onchange="updateRateChart()">
-                            <option value="timeline">Timeline</option>
-                            <option value="daily_avg">Daily Average</option>
-                            <option value="period_comparison">Period Comparison</option>
-                        </select>
+                <!-- Enhanced Chart Controls -->
+                <div class="card mb-3">
+                    <div class="card-header bg-info text-white">
+                        <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Date Range & Chart Controls</h6>
                     </div>
-                    <div class="col-md-2">
-                        <label for="rateFlowDirection" class="form-label">Flow Direction</label>
-                        <select class="form-select" id="rateFlowDirection" onchange="updateRateChart()">
-                            <option value="import">Import</option>
-                            <option value="export">Export</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3">
-                        <label for="rateStartDate" class="form-label">Start Date</label>
-                        <input type="date" class="form-control" id="rateStartDate" onchange="updateRateChart()">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="rateEndDate" class="form-label">End Date</label>
-                        <input type="date" class="form-control" id="rateEndDate" onchange="updateRateChart()">
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label">&nbsp;</label>
-                        <div>
-                            <button class="btn btn-primary btn-sm" onclick="updateRateChart()">
-                                <i class="fas fa-chart-bar"></i> Update Chart
-                            </button>
+                    <div class="card-body">
+                        <!-- Quick Date Range Buttons -->
+                        <div class="row mb-3">
+                            <div class="col-12">
+                                <label class="form-label fw-bold">Quick Select:</label>
+                                <div class="btn-group flex-wrap" role="group">
+                                    <button type="button" class="btn btn-primary btn-sm" onclick="setTariffQuickDate('lifetime')">
+                                        <i class="fas fa-infinity me-1"></i>Lifetime
+                                    </button>
+                                    <button type="button" class="btn btn-success btn-sm" onclick="setTariffQuickDate('export-start')">
+                                        <i class="fas fa-play me-1"></i>Since Export
+                                    </button>
+                                    <button type="button" class="btn btn-info btn-sm" onclick="setTariffQuickDate('move-in')">
+                                        <i class="fas fa-home me-1"></i>Since Move-in
+                                    </button>
+                                    <button type="button" class="btn btn-secondary btn-sm" onclick="setTariffQuickDate('week')">
+                                        <i class="fas fa-clock me-1"></i>7 Days
+                                    </button>
+                                    <button type="button" class="btn btn-warning btn-sm" onclick="setTariffQuickDate('month')">
+                                        <i class="fas fa-calendar me-1"></i>30 Days
+                                    </button>
+                                    <button type="button" class="btn btn-dark btn-sm" onclick="setTariffQuickDate('quarter')">
+                                        <i class="fas fa-calendar-alt me-1"></i>90 Days
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Main Controls Row -->
+                        <div class="row">
+                            <div class="col-md-2">
+                                <label for="rateChartType" class="form-label fw-bold">Chart Type</label>
+                                <select class="form-select" id="rateChartType" onchange="updateRateChart()">
+                                    <option value="timeline">Timeline</option>
+                                    <option value="daily_avg">Daily Average</option>
+                                    <option value="period_comparison">Period Comparison</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <label for="rateFlowDirection" class="form-label fw-bold">Flow Direction</label>
+                                <select class="form-select" id="rateFlowDirection" onchange="updateRateChart()">
+                                    <option value="import">Import</option>
+                                    <option value="export">Export</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Custom Date Range</label>
+                                <div class="row g-2">
+                                    <div class="col">
+                                        <input type="date" class="form-control" id="rateStartDate" onchange="updateRateChart()">
+                                    </div>
+                                    <div class="col">
+                                        <input type="date" class="form-control" id="rateEndDate" onchange="updateRateChart()">
+                                    </div>
+                                </div>
+                                <small class="text-muted">📊 Select dates for rate analysis</small>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label fw-bold">Chart Options</label>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="show-rate-markers" checked onchange="updateRateChart()">
+                                    <label class="form-check-label" for="show-rate-markers">
+                                        <i class="fas fa-dot-circle me-1"></i>Show Data Points
+                                    </label>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="smooth-rates" onchange="updateRateChart()">
+                                    <label class="form-check-label" for="smooth-rates">
+                                        <i class="fas fa-chart-line me-1"></i>Smooth Lines
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end">
+                                <button class="btn btn-primary" onclick="updateRateChart()">
+                                    <i class="fas fa-sync-alt me-1"></i>Refresh Chart
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -236,6 +287,40 @@ function refreshAllRates() {
             button.disabled = false;
         });
     }
+}
+
+function setTariffQuickDate(period) {
+    const endDate = new Date();
+    let startDate = new Date();
+    
+    switch(period) {
+        case 'lifetime':
+            // Use earliest available data date
+            startDate = new Date('2023-06-01');
+            break;
+        case 'export-start':
+            // Use solar export start date (March 26, 2024)
+            startDate = new Date('2024-03-26');
+            break;
+        case 'move-in':
+            // Use move-in date (May 16, 2025)
+            startDate = new Date('2025-05-16');
+            break;
+        case 'week':
+            startDate.setDate(endDate.getDate() - 7);
+            break;
+        case 'month':
+            startDate.setDate(endDate.getDate() - 30);
+            break;
+        case 'quarter':
+            startDate.setDate(endDate.getDate() - 90);
+            break;
+    }
+    
+    document.getElementById('rateStartDate').value = startDate.toISOString().split('T')[0];
+    document.getElementById('rateEndDate').value = endDate.toISOString().split('T')[0];
+    
+    updateRateChart();
 }
 
 function updateRateChart() {

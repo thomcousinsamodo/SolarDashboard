@@ -1171,6 +1171,70 @@ def load_pricing_data():
         print("Make sure the database has been created with migrate_to_database.py")
         return pd.DataFrame()
 
+def load_standing_charges():
+    """Load standing charges from tariff configuration."""
+    try:
+        with open('tariff_config.json', 'r') as f:
+            config = json.load(f)
+        
+        standing_charges = []
+        
+        # Process import timeline for standing charges
+        if 'import_timeline' in config and 'periods' in config['import_timeline']:
+            for period in config['import_timeline']['periods']:
+                if 'standing_charges' in period and period['standing_charges']:
+                    for charge in period['standing_charges']:
+                        standing_charges.append({
+                            'valid_from': charge['valid_from'],
+                            'valid_to': charge['valid_to'],
+                            'value_exc_vat': charge['value_exc_vat'],
+                            'value_inc_vat': charge['value_inc_vat'],
+                            'period_name': period.get('display_name', ''),
+                            'start_date': period['start_date'],
+                            'end_date': period['end_date']
+                        })
+        
+        df = pd.DataFrame(standing_charges)
+        if not df.empty:
+            # Convert to datetime
+            df['valid_from'] = pd.to_datetime(df['valid_from'])
+            df['valid_to'] = pd.to_datetime(df['valid_to'])
+            df['start_date'] = pd.to_datetime(df['start_date'])
+            df['end_date'] = pd.to_datetime(df['end_date'])
+            
+        return df
+        
+    except Exception as e:
+        print(f"Error loading standing charges: {e}")
+        return pd.DataFrame()
+
+def get_standing_charge_for_date(date, standing_charges_df):
+    """Get the standing charge that applies to a specific date."""
+    if standing_charges_df.empty:
+        return 0.0
+
+    # Convert date to pandas datetime for comparison
+    if hasattr(date, 'date'):  # It's already a datetime/timestamp
+        target_date = pd.to_datetime(date.date())
+    else:  # It's a date object
+        target_date = pd.to_datetime(date)
+
+    # Convert DataFrame date columns to date for comparison
+    start_dates = pd.to_datetime(standing_charges_df['start_date'].dt.date)
+    end_dates = pd.to_datetime(standing_charges_df['end_date'].dt.date)
+
+    # Find the standing charge period that covers this date
+    # Handle ongoing periods where end_date is null
+    applicable = standing_charges_df[
+        (start_dates <= target_date) & 
+        ((end_dates >= target_date) | pd.isna(standing_charges_df['end_date']))
+    ]
+
+    if not applicable.empty:
+        return applicable.iloc[0]['value_inc_vat']  # Return in pence for consistency with rates
+
+    return 0.0
+
 def get_filtered_pricing_data(start_date, end_date, flow_direction='import'):
     """Get filtered pricing data for the specified date range and flow direction.
     
@@ -1189,19 +1253,19 @@ def get_filtered_pricing_data(start_date, end_date, flow_direction='import'):
         return pd.DataFrame()
         
     try:
-        # Convert string dates to timezone-aware datetime objects
+        # Convert dates to timezone-aware datetime objects for proper comparison
+        from datetime import date
         if isinstance(start_date, str):
             start_date = pd.to_datetime(start_date, utc=True)
+        elif isinstance(start_date, date):  # It's a date object
+            start_date = pd.to_datetime(start_date).tz_localize('UTC')
+            
         if isinstance(end_date, str):
             end_date = pd.to_datetime(end_date, utc=True)
+        elif isinstance(end_date, date):  # It's a date object
+            end_date = pd.to_datetime(end_date).tz_localize('UTC')
             
-        # Convert date objects to timezone-aware datetime
-        if hasattr(start_date, 'date') and not hasattr(start_date, 'tz'):
-            start_date = pd.to_datetime(start_date, utc=True)
-        if hasattr(end_date, 'date') and not hasattr(end_date, 'tz'):
-            end_date = pd.to_datetime(end_date, utc=True)
-        
-        # Ensure end_date includes the full day
+        # Ensure end_date includes the full day (only for datetime objects, not date objects)
         if hasattr(end_date, 'time') and end_date.time() == pd.Timestamp('00:00:00').time():
             end_date = end_date.replace(hour=23, minute=59, second=59)
             
@@ -1346,6 +1410,62 @@ def create_rate_timeline_chart(rate_df, chart_type='timeline', flow_direction='i
                 title = f'Electricity Rates Over Time (Half-hourly - {date_range} days)'
                 xaxis_title = 'Date & Time'
         
+        # Add standing charges baseline for import rates only
+        if flow_direction == 'import':
+            try:
+                standing_charges_df = load_standing_charges()
+                if not standing_charges_df.empty:
+                    # Create standing charge data for the time period
+                    if date_range > 90:
+                        # For daily averages, show daily standing charge
+                        daily_standing_charges = []
+                        for _, row in daily_avg.iterrows():
+                            # daily_avg has 'datetime' column which is actually a date
+                            date_val = row['datetime']
+                            if hasattr(date_val, 'date'):
+                                date_val = date_val.date()
+                            charge = get_standing_charge_for_date(date_val, standing_charges_df)
+                            daily_standing_charges.append(charge)
+                        
+                        if any(c > 0 for c in daily_standing_charges):
+                            fig.add_trace(go.Scatter(
+                                x=daily_avg['datetime'],
+                                y=daily_standing_charges,
+                                mode='lines',
+                                name='Daily Standing Charge',
+                                line=dict(color='#ffc107', width=2),
+                                hovertemplate='<b>Standing Charge:</b> %{y:.2f}p/day<br>%{x}<br><extra></extra>'
+                            ))
+                    else:
+                        # For half-hourly data, show continuous standing charge line
+                        if not valid_data.empty:
+                            # Get standing charge for the date range - create daily points for continuous line
+                            start_date = valid_data['datetime'].min()
+                            end_date = valid_data['datetime'].max()
+                            
+                            # Create daily points to show standing charges properly
+                            daily_dates = pd.date_range(start=start_date.date(), end=end_date.date(), freq='D')
+                            standing_charges = []
+                            standing_dates = []
+                            
+                            for date in daily_dates:
+                                charge = get_standing_charge_for_date(date.date(), standing_charges_df)
+                                standing_charges.append(charge)
+                                standing_dates.append(date)
+                            
+                            if standing_charges and any(c > 0 for c in standing_charges):
+                                # Create a continuous line showing the standing charge level for each day
+                                fig.add_trace(go.Scatter(
+                                    x=standing_dates,
+                                    y=standing_charges,
+                                    mode='lines',
+                                    name='Daily Standing Charge',
+                                    line=dict(color='#ffc107', width=2),
+                                    hovertemplate='<b>Standing Charge:</b> %{y:.2f}p/day<br>%{x}<br><extra></extra>'
+                                ))
+            except Exception as e:
+                print(f"Warning: Could not add standing charges to chart: {e}")
+        
         fig.update_layout(
             title=title,
             xaxis_title=xaxis_title,
@@ -1376,6 +1496,29 @@ def create_rate_timeline_chart(rate_df, chart_type='timeline', flow_direction='i
             marker=dict(size=6),
             hovertemplate='<b>%{y:.2f}p/kWh</b><br>%{x}<br><extra></extra>'
         ))
+        
+        # Add standing charges for import rates only
+        if flow_direction == 'import':
+            try:
+                standing_charges_df = load_standing_charges()
+                if not standing_charges_df.empty:
+                    daily_standing_charges = []
+                    for _, row in daily_avg.iterrows():
+                        charge = get_standing_charge_for_date(row['date'], standing_charges_df)
+                        daily_standing_charges.append(charge)
+                    
+                    if any(c > 0 for c in daily_standing_charges):
+                        fig.add_trace(go.Scatter(
+                            x=daily_avg['date'],
+                            y=daily_standing_charges,
+                            mode='lines+markers',
+                            name='Daily Standing Charge',
+                            line=dict(color='#ffc107', width=2),
+                            marker=dict(size=4),
+                            hovertemplate='<b>Standing Charge:</b> %{y:.2f}p/day<br>%{x}<br><extra></extra>'
+                        ))
+            except Exception as e:
+                print(f"Warning: Could not add standing charges to daily avg chart: {e}")
         
         fig.update_layout(
             title='Daily Average Electricity Rates',

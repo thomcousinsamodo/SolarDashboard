@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Spending Dashboard - Octopus Energy</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        .metric-card {
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
+        }
+        .metric-value {
+            font-size: 2rem;
+            font-weight: bold;
+        }
+        .metric-label {
+            font-size: 0.9rem;
+            opacity: 0.8;
+        }
+        .cost-positive {
+            color: #dc3545;
+        }
+        .cost-negative {
+            color: #28a745;
+        }
+        .chart-container {
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            padding: 1rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-light">
+    <div class="container-fluid py-4">
+        <!-- Header -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <h1 class="display-5 fw-bold text-primary">
+                    <i class="fas fa-pound-sign me-3"></i>
+                    Energy Spending Dashboard
+                </h1>
+                <p class="lead text-muted">Track your actual energy costs and earnings from solar exports</p>
+            </div>
+        </div>
+
+        <!-- Date Controls -->
+        <div class="row mb-4">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header bg-success text-white">
+                        <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Date Range Controls</h6>
+                    </div>
+                    <div class="card-body">
+                        <form id="date-controls">
+                            <!-- Quick Date Range Buttons -->
+                            <div class="row mb-3">
+                                <div class="col-12">
+                                    <label class="form-label fw-bold">Quick Select:</label>
+                                    <div class="btn-group flex-wrap" role="group">
+                                        <button type="button" class="btn btn-primary btn-sm" onclick="setQuickDate('lifetime')">
+                                            <i class="fas fa-infinity me-1"></i>Lifetime
+                                        </button>
+                                        <button type="button" class="btn btn-success btn-sm" onclick="setQuickDate('export-start')">
+                                            <i class="fas fa-play me-1"></i>Since Export
+                                        </button>
+                                        <button type="button" class="btn btn-info btn-sm" onclick="setQuickDate('move-in')">
+                                            <i class="fas fa-home me-1"></i>Since Move-in
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickDate('week')">
+                                            <i class="fas fa-clock me-1"></i>7 Days
+                                        </button>
+                                        <button type="button" class="btn btn-warning btn-sm" onclick="setQuickDate('month')">
+                                            <i class="fas fa-calendar me-1"></i>30 Days
+                                        </button>
+                                        <button type="button" class="btn btn-dark btn-sm" onclick="setQuickDate('quarter')">
+                                            <i class="fas fa-calendar-alt me-1"></i>90 Days
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div class="row">
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Custom Date Range</label>
+                                    <div class="row g-2">
+                                        <div class="col">
+                                            <input type="date" class="form-control" id="start-date" value="{{ start_date }}" placeholder="Start Date">
+                                        </div>
+                                        <div class="col">
+                                            <input type="date" class="form-control" id="end-date" value="{{ end_date }}" placeholder="End Date">
+                                        </div>
+                                    </div>
+                                    <small class="text-muted">
+                                        💰 Select dates to analyze spending patterns
+                                    </small>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label fw-bold">Chart Options</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="show-markers" name="options" value="show_markers" checked onchange="updateCharts()">
+                                        <label class="form-check-label" for="show-markers">
+                                            <i class="fas fa-dot-circle me-1"></i>Show Data Points
+                                        </label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="fill-areas" name="options" value="fill_areas" checked onchange="updateCharts()">
+                                        <label class="form-check-label" for="fill-areas">
+                                            <i class="fas fa-fill me-1"></i>Fill Chart Areas
+                                        </label>
+                                    </div>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button type="button" class="btn btn-primary" onclick="updateCharts()">
+                                        <i class="fas fa-sync-alt me-1"></i>Refresh Charts
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        {% if has_data %}
+        <!-- Summary Cards -->
+        <div class="row mb-4" id="summary-cards">
+            <div class="col-md-2">
+                <div class="card metric-card bg-danger text-white h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-arrow-down fa-2x mb-3"></i>
+                        <h3 class="metric-value">£{{ "%.2f"|format(summary.total_import_cost) }}</h3>
+                        <p class="metric-label mb-1">Total Import Cost</p>
+                        <small id="import-details">
+                            Usage: £{{ "%.2f"|format(summary.usage_import_cost) }}<br>
+                            Standing: £{{ "%.2f"|format(summary.total_standing_charges) }}
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card bg-warning text-dark h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-receipt fa-2x mb-3"></i>
+                        <h3 class="metric-value">£{{ "%.2f"|format(summary.total_standing_charges) }}</h3>
+                        <p class="metric-label mb-1">Standing Charges</p>
+                        <small>
+                            £{{ "%.2f"|format(summary.avg_daily_standing_charge) }}/day × {{ "%.0f"|format(summary.period_days) }} days<br>
+                            (part of total import cost)
+                        </small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="card metric-card bg-success text-white h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-arrow-up fa-2x mb-3"></i>
+                        <h3 class="metric-value">£{{ "%.2f"|format(summary.total_export_earnings) }}</h3>
+                        <p class="metric-label mb-1">Export Earnings</p>
+                        <small id="export-details">{{ "%.1f"|format(summary.total_export_kwh) }} kWh @ {{ "%.1f"|format(summary.avg_export_rate) }}p/kWh avg</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card bg-primary text-white h-100">
+                    <div class="card-body text-center">
+                        <i class="fas {{ 'fa-minus' if summary.net_cost > 0 else 'fa-plus' }} fa-2x mb-3"></i>
+                        <h3 class="metric-value">£{{ "%.2f"|format(summary.net_cost|abs) }}</h3>
+                        <p class="metric-label mb-1">
+                            {% if summary.net_cost > 0 %}
+                                Net Cost
+                            {% else %}
+                                Net Savings
+                            {% endif %}
+                        </p>
+                        <small id="period-days">{{ "%.1f"|format(summary.period_days) }} day period</small>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-3">
+                <div class="card metric-card bg-dark text-white h-100">
+                    <div class="card-body text-center">
+                        <i class="fas fa-calculator fa-2x mb-3"></i>
+                        <h3 class="metric-value">
+                            {% if summary.period_days > 0 %}
+                                £{{ "%.2f"|format(summary.net_cost / summary.period_days) }}
+                            {% else %}
+                                £0.00
+                            {% endif %}
+                        </h3>
+                        <p class="metric-label mb-1">Daily Average</p>
+                        <small>
+                            {% if summary.net_cost > 0 %}
+                                Cost per day
+                            {% else %}
+                                Savings per day
+                            {% endif %}
+                        </small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <div id="timeline-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <div id="hourly-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12">
+                <div class="chart-container">
+                    <div id="hourly-price-usage-chart"></div>
+                </div>
+            </div>
+        </div>
+
+        {% else %}
+        <!-- No Data Message -->
+        <div class="row">
+            <div class="col-12">
+                <div class="alert alert-warning text-center" role="alert">
+                    <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                    <h4>No Spending Data Available</h4>
+                    <p>We couldn't find any spending data for the selected period. This could be because:</p>
+                    <ul class="text-start" style="max-width: 500px; margin: 0 auto;">
+                        <li>No consumption data has been imported yet</li>
+                        <li>No pricing/tariff data is available</li>
+                        <li>The data hasn't been properly matched between consumption and pricing</li>
+                    </ul>
+                    <hr>
+                    <p class="mb-0">
+                        <a href="/" class="btn btn-primary">Go to Main Dashboard</a>
+                        to refresh your data first.
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Loading Indicator -->
+        <div id="loading-indicator" class="text-center" style="display: none;">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Loading...</span>
+            </div>
+            <p class="mt-2">Loading spending data...</p>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <script>
+        function setQuickDate(period) {
+            const endDate = new Date();
+            let startDate = new Date();
+            
+            switch(period) {
+                case 'lifetime':
+                    // Use earliest available data date
+                    startDate = new Date('2023-06-01');
+                    break;
+                case 'export-start':
+                    // Use solar export start date (March 26, 2024)
+                    startDate = new Date('2024-03-26');
+                    break;
+                case 'move-in':
+                    // Use move-in date (May 16, 2025)
+                    startDate = new Date('2025-05-16');
+                    break;
+                case 'week':
+                    startDate.setDate(endDate.getDate() - 7);
+                    break;
+                case 'month':
+                    startDate.setDate(endDate.getDate() - 30);
+                    break;
+                case 'quarter':
+                    startDate.setDate(endDate.getDate() - 90);
+                    break;
+            }
+            
+            document.getElementById('start-date').value = startDate.toISOString().split('T')[0];
+            document.getElementById('end-date').value = endDate.toISOString().split('T')[0];
+            
+            updateCharts();
+        }
+
+        function updateCharts() {
+            const startDate = document.getElementById('start-date').value;
+            const endDate = document.getElementById('end-date').value;
+            
+            if (!startDate || !endDate) {
+                alert('Please select both start and end dates.');
+                return;
+            }
+            
+            // Get chart options
+            const showMarkers = document.getElementById('show-markers').checked;
+            const fillAreas = document.getElementById('fill-areas').checked;
+            
+            // Show loading indicator
+            document.getElementById('loading-indicator').style.display = 'block';
+            
+            fetch('/api/spending-charts', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    start_date: startDate,
+                    end_date: endDate,
+                    show_markers: showMarkers,
+                    fill_areas: fillAreas
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Update charts
+                    Plotly.newPlot('timeline-chart', JSON.parse(data.charts.timeline).data, JSON.parse(data.charts.timeline).layout);
+                    Plotly.newPlot('hourly-chart', JSON.parse(data.charts.hourly).data, JSON.parse(data.charts.hourly).layout);
+                    Plotly.newPlot('hourly-price-usage-chart', JSON.parse(data.charts.hourly_price_usage).data, JSON.parse(data.charts.hourly_price_usage).layout);
+                    
+                    // Update summary cards
+                    updateSummaryCards(data.summary);
+                } else {
+                    alert('Error loading data: ' + (data.message || data.error));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Network error occurred while loading data.');
+            })
+            .finally(() => {
+                document.getElementById('loading-indicator').style.display = 'none';
+            });
+        }
+
+        function updateSummaryCards(summary) {
+            // Update the values in summary cards
+            const cards = document.querySelectorAll('#summary-cards .metric-value');
+            if (cards.length >= 5) {
+                cards[0].textContent = '£' + summary.total_import_cost.toFixed(2);
+                cards[1].textContent = '£' + summary.total_standing_charges.toFixed(2);
+                cards[2].textContent = '£' + summary.total_export_earnings.toFixed(2);
+                cards[3].textContent = '£' + Math.abs(summary.net_cost).toFixed(2);
+                
+                // Calculate daily average safely
+                const dailyAvg = summary.period_days > 0 ? summary.net_cost / summary.period_days : 0;
+                cards[4].textContent = '£' + dailyAvg.toFixed(2);
+            }
+            
+            // Update additional details using specific IDs
+            const importDetails = document.getElementById('import-details');
+            if (importDetails) {
+                importDetails.innerHTML = 'Usage: £' + summary.usage_import_cost.toFixed(2) + '<br>Standing: £' + summary.total_standing_charges.toFixed(2);
+            }
+            
+            const exportDetails = document.getElementById('export-details');
+            if (exportDetails) {
+                exportDetails.textContent = summary.total_export_kwh.toFixed(1) + ' kWh @ ' + summary.avg_export_rate.toFixed(1) + 'p/kWh avg';
+            }
+            
+            const periodDays = document.getElementById('period-days');
+            if (periodDays) {
+                periodDays.textContent = summary.period_days.toFixed(1) + ' day period';
+            }
+            
+            // Update the last small text (daily average details)
+            const smallTexts = document.querySelectorAll('#summary-cards small');
+            if (smallTexts.length >= 5) {
+                smallTexts[4].textContent = summary.net_cost > 0 ? 'Cost per day' : 'Savings per day';
+            }
+        }
+
+        // Load initial charts if data is available
+        document.addEventListener('DOMContentLoaded', function() {
+            {% if has_data %}
+                updateCharts();
+            {% endif %}
+        });
+    </script>
+</body>
+</html> 
