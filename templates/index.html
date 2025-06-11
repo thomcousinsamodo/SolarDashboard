@@ -14,6 +14,44 @@
     </div>
 </div>
 
+<!-- Credential Status -->
+{% if not credentials_available %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning" role="alert">
+            <h5 class="alert-heading">
+                <i class="fas fa-key me-2"></i>Credentials Required
+            </h5>
+            <p class="mb-3">{{ credential_error }}</p>
+            
+            <!-- Password Input for Encrypted Credentials -->
+            <div class="row">
+                <div class="col-md-6">
+                    <div class="input-group">
+                        <span class="input-group-text">
+                            <i class="fas fa-lock"></i>
+                        </span>
+                        <input type="password" class="form-control" id="credential-password" 
+                               placeholder="Enter encryption password">
+                        <button class="btn btn-primary" type="button" onclick="cachePassword()">
+                            <i class="fas fa-unlock me-1"></i>Unlock Credentials
+                        </button>
+                    </div>
+                    <small class="form-text text-muted mt-1">
+                        Enter your encryption password to access API credentials for this session.
+                    </small>
+                </div>
+            </div>
+            
+            <!-- Status Message -->
+            <div id="credential-status" class="mt-3" style="display: none;">
+                <div class="alert mb-0" id="credential-alert"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
 <!-- Data Refresh Section -->
 <div class="row mb-4">
     <div class="col-12">
@@ -519,6 +557,80 @@
     document.getElementById('dashboard-updated').textContent = new Date().toLocaleString();
     
     let refreshInProgress = false;
+    
+    // Password caching function
+    function cachePassword() {
+        const passwordInput = document.getElementById('credential-password');
+        const password = passwordInput.value.trim();
+        
+        if (!password) {
+            showCredentialStatus('Please enter your encryption password.', 'danger');
+            return;
+        }
+        
+        // Show loading state
+        const button = document.querySelector('[onclick="cachePassword()"]');
+        const originalText = button.innerHTML;
+        button.disabled = true;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Unlocking...';
+        
+        fetch('/api/cache-password', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({password: password})
+        })
+        .then(response => response.json())
+        .then(result => {
+            if (result.success) {
+                showCredentialStatus('✅ Credentials unlocked successfully! Reloading dashboard...', 'success');
+                // Clear password field
+                passwordInput.value = '';
+                // Reload page to show unlocked content
+                setTimeout(() => {
+                    window.location.reload();
+                }, 1500);
+            } else {
+                showCredentialStatus('❌ ' + (result.error || 'Failed to unlock credentials'), 'danger');
+            }
+        })
+        .catch(error => {
+            showCredentialStatus('❌ Network error: ' + error.message, 'danger');
+        })
+        .finally(() => {
+            button.disabled = false;
+            button.innerHTML = originalText;
+        });
+    }
+    
+    function showCredentialStatus(message, type) {
+        const statusDiv = document.getElementById('credential-status');
+        const alertDiv = document.getElementById('credential-alert');
+        
+        alertDiv.className = 'alert alert-' + type + ' mb-0';
+        alertDiv.textContent = message;
+        statusDiv.style.display = 'block';
+        
+        // Auto-hide after 5 seconds for non-success messages
+        if (type !== 'success') {
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+    }
+    
+    // Allow Enter key to trigger password caching
+    document.addEventListener('DOMContentLoaded', function() {
+        const passwordInput = document.getElementById('credential-password');
+        if (passwordInput) {
+            passwordInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    cachePassword();
+                }
+            });
+        }
+    });
     
     // Main data refresh function
     function refreshData(type) {

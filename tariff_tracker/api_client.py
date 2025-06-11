@@ -7,7 +7,12 @@ import json
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Union
 import os
+import sys
 import time
+
+# Add parent directory to path to import credential_manager
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+from credential_manager import CredentialManager
 
 from .logging_config import get_logger, get_structured_logger, TimingContext
 
@@ -19,7 +24,7 @@ class OctopusAPIClient:
         """Initialize the API client.
         
         Args:
-            api_key: Optional API key. If not provided, will try to read from oct_api.txt
+            api_key: Optional API key. If not provided, will try to load from credential manager
         """
         self.base_url = "https://api.octopus.energy/v1"
         self.logger = get_logger('api')
@@ -37,17 +42,34 @@ class OctopusAPIClient:
         })
     
     def _load_api_key(self) -> str:
-        """Load API key from oct_api.txt file."""
+        """Load API key from credential manager."""
         try:
-            # Look for oct_api.txt in parent directory
-            api_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'oct_api.txt')
-            with open(api_file, 'r') as f:
-                api_key = f.readline().strip()
-                self.logger.info(f"API key loaded from {api_file}")
+            # Initialize credential manager
+            cred_manager = CredentialManager()
+            
+            # Try to load credentials silently first (using cached password if available)
+            api_key, account_number = cred_manager.get_credentials(silent=True)
+            
+            if api_key:
+                self.logger.info("API key loaded from credential manager")
                 return api_key
-        except FileNotFoundError:
-            self.logger.error(f"oct_api.txt not found at expected location")
-            raise FileNotFoundError("oct_api.txt not found. Please provide API key manually.")
+            else:
+                self.logger.error("No API key found in credential manager or password required")
+                raise ValueError("No API key found in credential manager or password required. Please cache your password first.")
+                
+        except Exception as e:
+            self.logger.error(f"Failed to load API key from credential manager: {e}")
+            
+            # Fallback: try old oct_api.txt file for backward compatibility
+            try:
+                api_file = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'oct_api.txt')
+                with open(api_file, 'r') as f:
+                    api_key = f.readline().strip()
+                    self.logger.warning(f"Using fallback API key from {api_file} - consider migrating to credential manager")
+                    return api_key
+            except FileNotFoundError:
+                self.logger.error("No credentials found in credential manager or oct_api.txt")
+                raise FileNotFoundError("No API key found. Please set up credentials using the credential manager.")
     
     def _make_request(self, method: str, url: str, params: Dict = None) -> requests.Response:
         """Make an HTTP request with logging and error handling."""

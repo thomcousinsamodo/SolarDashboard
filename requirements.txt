@@ -5,4 +5,8 @@ flask>=2.3.0
 plotly>=5.15.0
 dash>=2.14.0
 dash-bootstrap-components>=1.4.0
-pytz>=2023.3 
+pytz>=2023.3
+
+# Security & Credential Management
+cryptography>=41.0.0
+keyring>=24.0.0 

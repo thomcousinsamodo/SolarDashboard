@@ -14,6 +14,24 @@ import json
 import os
 from pathlib import Path
 import database_utils
+from credential_manager import CredentialManager
+
+# Initialize credential manager
+credential_manager = CredentialManager()
+
+def get_api_credentials():
+    """Get API credentials using secure credential manager."""
+    try:
+        # Try to get credentials silently first (using cached password if available)
+        api_key, account_number = credential_manager.get_credentials(silent=True)
+        
+        if not api_key or not account_number:
+            return None, None, 'API credentials not found or password required. Please run credential_manager.py to set up secure credentials or cache your password.'
+        
+        return api_key, account_number, None
+        
+    except Exception as e:
+        return None, None, f'Error loading credentials: {str(e)}'
 
 # Tariff tracker imports
 try:
@@ -168,12 +186,16 @@ colors = {
 @app.route('/')
 def index():
     """Main unified dashboard page."""
+    # Check if credentials are accessible
+    api_key, account_number, error_msg = get_api_credentials()
+    credentials_available = api_key is not None and account_number is not None
+    
     # Get solar stats with comparisons
     solar_stats = get_dashboard_solar_stats()
     
     # Get tariff summary if available
     tariff_summary = {}
-    if TARIFF_AVAILABLE:
+    if TARIFF_AVAILABLE and credentials_available:
         try:
             mgr = get_manager()
             if mgr:
@@ -191,7 +213,9 @@ def index():
                          solar_stats=solar_stats, 
                          tariff_summary=tariff_summary,
                          tariff_available=TARIFF_AVAILABLE,
-                         solar_data_available=solar_data_available)
+                         solar_data_available=solar_data_available,
+                         credentials_available=credentials_available,
+                         credential_error=error_msg if not credentials_available else None)
 
 def get_dashboard_solar_stats():
     """Get solar stats for the main dashboard with weekly focus and comparisons."""
@@ -1548,6 +1572,27 @@ def fix_chart_binary_data(chart_dict):
                     trace[key] = array.tolist()  # Convert to regular Python list
     return chart_dict
 
+@app.route('/api/cache-password', methods=['POST'])
+def api_cache_password():
+    """Cache encryption password for the session."""
+    try:
+        data = request.get_json()
+        password = data.get('password')
+        
+        if not password:
+            return jsonify({'success': False, 'error': 'Password required'}), 400
+        
+        # Try to cache the password
+        success = credential_manager.cache_password(password)
+        
+        if success:
+            return jsonify({'success': True, 'message': 'Password cached successfully'})
+        else:
+            return jsonify({'success': False, 'error': 'Invalid password or no encrypted credentials found'}), 400
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/refresh-data', methods=['POST'])
 def api_refresh_data():
     """API endpoint for refreshing both consumption and pricing data."""
@@ -1644,22 +1689,14 @@ def refresh_consumption_data_lifetime():
     import subprocess
     import os
     
-    # Check for API credentials
-    api_key = os.getenv('OCTOPUS_API_KEY')
-    account_number = os.getenv('OCTOPUS_ACCOUNT_NUMBER')
+    # Check for API credentials using secure credential manager
+    api_key, account_number, error_msg = get_api_credentials()
     
     if not api_key or not account_number:
-        # Try to load from files
-        try:
-            with open('oct_api.txt', 'r') as f:
-                api_key = f.read().strip()
-            with open('account_info.txt', 'r') as f:
-                account_number = f.read().strip()
-        except FileNotFoundError:
-            return {
-                'status': 'error',
-                'message': 'API credentials not found. Please set up credentials first.'
-            }
+        return {
+            'status': 'error',
+            'message': error_msg or 'API credentials not found. Please run credential_manager.py to set up secure credentials.'
+        }
     
     # Set environment variables for the subprocess
     env = os.environ.copy()
@@ -1732,22 +1769,14 @@ def refresh_consumption_data(days_back=30):
     import os
     from datetime import datetime, timedelta
     
-    # Check for API credentials
-    api_key = os.getenv('OCTOPUS_API_KEY')
-    account_number = os.getenv('OCTOPUS_ACCOUNT_NUMBER')
+    # Check for API credentials using secure credential manager
+    api_key, account_number, error_msg = get_api_credentials()
     
     if not api_key or not account_number:
-        # Try to load from oct_api.txt and account_info.txt
-        try:
-            with open('oct_api.txt', 'r') as f:
-                api_key = f.read().strip()
-            with open('account_info.txt', 'r') as f:
-                account_number = f.read().strip()
-        except FileNotFoundError:
-            return {
-                'status': 'error',
-                'message': 'API credentials not found. Please set OCTOPUS_API_KEY and OCTOPUS_ACCOUNT_NUMBER environment variables or create oct_api.txt and account_info.txt files.'
-            }
+        return {
+            'status': 'error',
+            'message': error_msg or 'API credentials not found. Please run credential_manager.py to set up secure credentials.'
+        }
     
     # Set environment variables for the subprocess
     env = os.environ.copy()

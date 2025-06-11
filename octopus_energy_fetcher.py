@@ -9,6 +9,7 @@ import requests
 import json
 import pandas as pd
 import database_utils
+from credential_manager import CredentialManager
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import os
@@ -223,15 +224,14 @@ class DataAnalyzer:
 def main():
     """Main function to demonstrate the API usage"""
     
-    # Configuration - you'll need to set these
-    API_KEY = os.getenv('OCTOPUS_API_KEY', 'your_api_key_here')
-    ACCOUNT_NUMBER = os.getenv('OCTOPUS_ACCOUNT_NUMBER', 'A-AAAA1111')
+    # Load credentials using secure credential manager
+    credential_manager = CredentialManager()
+    API_KEY, ACCOUNT_NUMBER = credential_manager.get_credentials()
     
-    if API_KEY == 'your_api_key_here' or ACCOUNT_NUMBER == 'A-AAAA1111':
-        print("Please set your API key and account number in environment variables:")
-        print("export OCTOPUS_API_KEY='your_actual_api_key'")
-        print("export OCTOPUS_ACCOUNT_NUMBER='your_actual_account_number'")
-        print("\nOr modify the script to include them directly (less secure)")
+    if not API_KEY or not ACCOUNT_NUMBER:
+        print("❌ API credentials not found.")
+        print("🔐 Please run credential_manager.py to set up secure credentials:")
+        print("   python credential_manager.py")
         return
     
     # Initialize API client
