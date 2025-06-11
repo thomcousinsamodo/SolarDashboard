@@ -13,6 +13,7 @@ from datetime import datetime, date, timedelta
 import json
 import os
 from pathlib import Path
+import database_utils
 
 # Tariff tracker imports
 try:
@@ -53,29 +54,34 @@ else:
 
 # Solar data loading functions
 def load_solar_data():
-    """Load consumption data from CSV files"""
-    data_files = {
-        'daily': 'octopus_consumption_daily.csv',
-        'raw': 'octopus_consumption_raw.csv'
-    }
-    
-    dataframes = {}
-    for key, filename in data_files.items():
-        if os.path.exists(filename):
-            df = pd.read_csv(filename)
-            if key == 'daily':
-                df['date'] = pd.to_datetime(df['date'])
-                df = df.sort_values('date').reset_index(drop=True)
-            elif key == 'raw':
-                df['interval_start'] = pd.to_datetime(df['interval_start'])
-                df['interval_end'] = pd.to_datetime(df['interval_end'])
-                df = df.sort_values('interval_start').reset_index(drop=True)
-            dataframes[key] = df
-        else:
-            print(f"Warning: {filename} not found")
-            dataframes[key] = pd.DataFrame()
-    
-    return dataframes
+    """Load consumption data from database"""
+    try:
+        dataframes = {}
+        
+        # Load daily data
+        daily_df = database_utils.load_consumption_data(table_name='consumption_daily')
+        if not daily_df.empty:
+            daily_df['date'] = pd.to_datetime(daily_df['date'])
+            daily_df = daily_df.sort_values('date').reset_index(drop=True)
+        dataframes['daily'] = daily_df
+        
+        # Load raw data  
+        raw_df = database_utils.load_consumption_data(table_name='consumption_raw')
+        if not raw_df.empty:
+            raw_df['interval_start'] = pd.to_datetime(raw_df['interval_start'])
+            raw_df['interval_end'] = pd.to_datetime(raw_df['interval_end'])
+            raw_df = raw_df.sort_values('interval_start').reset_index(drop=True)
+        dataframes['raw'] = raw_df
+        
+        return dataframes
+        
+    except Exception as e:
+        print(f"Warning: Error loading data from database: {e}")
+        # Return empty dataframes as fallback
+        return {
+            'daily': pd.DataFrame(),
+            'raw': pd.DataFrame()
+        }
 
 def calculate_summary_stats(df):
     """Calculate summary statistics for the dashboard"""
@@ -1119,22 +1125,26 @@ def create_consumption_pattern_chart(df, use_rolling_avg=False):
     return fig
 
 def load_pricing_data():
-    """Load pricing data from CSV file."""
-    pricing_file = 'pricing_raw.csv'
-    
-    if not os.path.exists(pricing_file):
-        print(f"Warning: {pricing_file} not found. Run generate_pricing_data.py first.")
-        return pd.DataFrame()
-    
+    """Load pricing data from database."""
     try:
-        df = pd.read_csv(pricing_file)
+        df = database_utils.load_pricing_data()
         if not df.empty:
-            # Convert datetime column to UTC timezone for consistent filtering
-            df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+            # Check if we have the old format (valid_from) or new format (datetime)
+            if 'valid_from' in df.columns:
+                # Old format from CSV migration
+                df['datetime'] = pd.to_datetime(df['valid_from'], utc=True)
+                df['rate_inc_vat'] = df['value_inc_vat']
+                df['rate_exc_vat'] = df['value_exc_vat']
+            else:
+                # New format from generate_pricing_data.py
+                df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+                # rate_inc_vat and rate_exc_vat columns already exist
+            
             df = df.sort_values(['datetime', 'flow_direction']).reset_index(drop=True)
         return df
     except Exception as e:
-        print(f"Error loading pricing data: {e}")
+        print(f"Warning: Error loading pricing data from database: {e}")
+        print("Make sure the database has been created with migrate_to_database.py")
         return pd.DataFrame()
 
 def get_filtered_pricing_data(start_date, end_date, flow_direction='import'):
@@ -1599,39 +1609,34 @@ def api_refresh_data():
         return jsonify({'success': False, 'error': str(e)}), 400
 
 def delete_consumption_data():
-    """Safely delete existing consumption data files."""
-    import os
-    import glob
-    from datetime import datetime
-    
+    """Safely delete existing consumption data from database."""
     try:
-        # Files to delete (consumption data files)
-        files_to_delete = [
-            'octopus_consumption_raw.csv',
-            'octopus_consumption_daily.csv',
-            'octopus_consumption_monthly.csv'
-        ]
+        # Get current stats before deletion
+        stats_before = database_utils.get_data_stats()
         
-        # Also delete timestamped backup files
-        timestamped_files = glob.glob('octopus_consumption_*_202*.csv')
-        files_to_delete.extend(timestamped_files)
+        # Delete consumption data from database
+        success = database_utils.delete_all_consumption_data()
         
-        deleted_files = []
-        for file_path in files_to_delete:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-                deleted_files.append(file_path)
-        
-        return {
-            'status': 'success',
-            'message': f'Deleted {len(deleted_files)} consumption data files',
-            'deleted_files': deleted_files
-        }
+        if success:
+            return {
+                'status': 'success',
+                'message': f'Deleted consumption data from database',
+                'deleted_records': {
+                    'consumption_raw': stats_before.get('consumption_raw', 0),
+                    'consumption_daily': stats_before.get('consumption_daily', 0),
+                    'consumption_monthly': stats_before.get('consumption_monthly', 0)
+                }
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': 'Failed to delete consumption data from database'
+            }
         
     except Exception as e:
         return {
             'status': 'error',
-            'message': f'Error deleting files: {str(e)}'
+            'message': f'Error deleting consumption data: {str(e)}'
         }
 
 def refresh_consumption_data_lifetime():
@@ -1680,12 +1685,13 @@ def refresh_consumption_data_lifetime():
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800, encoding='utf-8', errors='replace')  # 30 minute timeout for lifetime
         
         if result.returncode == 0:
-            # Check if the expected files were created
+            # Check database statistics after refresh
+            stats_after = database_utils.get_data_stats()
             files_created = []
-            if os.path.exists('octopus_consumption_raw.csv'):
-                files_created.append('octopus_consumption_raw.csv')
-            if os.path.exists('octopus_consumption_daily.csv'):
-                files_created.append('octopus_consumption_daily.csv')
+            if stats_after.get("consumption_raw", 0) > 0:
+                files_created.append("Database: consumption_raw")
+            if stats_after.get("consumption_daily", 0) > 0:
+                files_created.append("Database: consumption_daily")
             
             return {
                 'status': 'success',
@@ -1767,12 +1773,13 @@ def refresh_consumption_data(days_back=30):
         result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300, encoding='utf-8', errors='replace')
         
         if result.returncode == 0:
-            # Check if the expected files were created
+            # Check database statistics after refresh
+            stats_after = database_utils.get_data_stats()
             files_created = []
-            if os.path.exists('octopus_consumption_raw.csv'):
-                files_created.append('octopus_consumption_raw.csv')
-            if os.path.exists('octopus_consumption_daily.csv'):
-                files_created.append('octopus_consumption_daily.csv')
+            if stats_after.get("consumption_raw", 0) > 0:
+                files_created.append("Database: consumption_raw")
+            if stats_after.get("consumption_daily", 0) > 0:
+                files_created.append("Database: consumption_daily")
             
             return {
                 'status': 'success',

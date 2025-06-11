@@ -8,6 +8,7 @@ and perform basic analysis.
 import requests
 import json
 import pandas as pd
+import database_utils
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import os
@@ -313,22 +314,26 @@ def main():
             print("\nMONTHLY SUMMARY:")
             print(monthly_summary.to_string(index=False))
         
-        # Save data to CSV files
-        print("\nSaving data to CSV files...")
+        # Save data to database
+        print("\n💾 Saving data to database...")
         
-        # Save raw data
-        combined_df.to_csv('octopus_consumption_raw.csv', index=False)
-        print("- Raw data saved to: octopus_consumption_raw.csv")
-        
-        # Save daily summary
-        if not daily_summary.empty:
-            daily_summary.to_csv('octopus_consumption_daily.csv', index=False)
-            print("- Daily summary saved to: octopus_consumption_daily.csv")
-        
-        # Save monthly summary
-        if not monthly_summary.empty:
-            monthly_summary.to_csv('octopus_consumption_monthly.csv', index=False)
-            print("- Monthly summary saved to: octopus_consumption_monthly.csv")
+        # Save raw data to database
+        if database_utils.save_consumption_data(combined_df, "consumption_raw"):
+            print("✅ Raw data saved to database successfully")
+            
+            # Create daily and monthly aggregates from raw data
+            print("Creating daily aggregates...")
+            database_utils.create_daily_aggregates()
+            print("Creating monthly aggregates...")
+            database_utils.create_monthly_aggregates()
+            print("✅ Aggregates created successfully")
+        else:
+            print("❌ Failed to save raw data to database")
+            
+        # Optional: Save backups to CSV
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        combined_df.to_csv(f'data/csv_backup/octopus_consumption_raw_{timestamp}.csv', index=False)
+        print(f"✅ Backup saved to: data/csv_backup/octopus_consumption_raw_{timestamp}.csv")
     
     else:
         print("\nNo consumption data was retrieved.")

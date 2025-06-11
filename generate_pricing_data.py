@@ -6,6 +6,7 @@ Uses the same proven rate lookup logic as the dashboard.
 """
 
 import pandas as pd
+import database_utils
 from datetime import datetime, date, timedelta
 from pathlib import Path
 import sys
@@ -132,7 +133,7 @@ def generate_half_hourly_data(mgr, start_date, end_date):
     
     return all_data
 
-def generate_pricing_data(output_file='pricing_raw.csv'):
+def generate_pricing_data():
     """Generate comprehensive pricing data using proven dashboard logic."""
     print("🔄 Initializing tariff manager...")
     
@@ -178,9 +179,17 @@ def generate_pricing_data(output_file='pricing_raw.csv'):
         # Sort by datetime and flow direction
         df = df.sort_values(['datetime', 'flow_direction']).reset_index(drop=True)
         
-        # Save to CSV
-        print(f"💾 Saving to {output_file}...")
-        df.to_csv(output_file, index=False)
+        # Save to database
+        print("💾 Saving to database...")
+        if database_utils.save_pricing_data(df):
+            print("✅ Pricing data saved to database successfully")
+        else:
+            print("❌ Failed to save pricing data to database")
+            
+        # Optional: Save backup to CSV
+        backup_file = f'data/csv_backup/pricing_raw_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        df.to_csv(backup_file, index=False)
+        print(f"✅ Backup saved to: {backup_file}")
         
         # Summary statistics
         print("\n📊 Summary Statistics:")
@@ -198,7 +207,7 @@ def generate_pricing_data(output_file='pricing_raw.csv'):
         gaps = len(df[df['rate_inc_vat'].isna()])
         print(f"   Records with gaps: {gaps:,}")
         
-        print(f"\n✅ Pricing data successfully saved to {output_file}")
+        print(f"\n✅ Pricing data successfully saved to database")
         return True
         
     finally:
@@ -214,22 +223,17 @@ def main():
     print("Using proven dashboard rate lookup logic")
     print("=" * 50)
     
-    # Check if output file exists
-    output_file = 'pricing_raw.csv'
-    if Path(output_file).exists():
-        response = input(f"⚠️  {output_file} already exists. Overwrite? (y/N): ")
-        if response.lower() != 'y':
-            print("❌ Operation cancelled")
-            return
-    
     start_time = datetime.now()
-    success = generate_pricing_data(output_file)
+    success = generate_pricing_data()
     end_time = datetime.now()
     
     if success:
         duration = end_time - start_time
         print(f"\n🎉 Processing completed in {duration.total_seconds():.1f} seconds")
-        print(f"📁 File size: {Path(output_file).stat().st_size / 1024 / 1024:.1f} MB")
+        
+        # Get database stats for size information
+        stats = database_utils.get_data_stats()
+        print(f"📊 Database now contains {stats.get('pricing_raw', 0):,} pricing records")
     else:
         print("\n❌ Processing failed")
         sys.exit(1)

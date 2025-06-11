@@ -7,6 +7,7 @@ Enhanced version to fetch historical data with custom date ranges and progress t
 import requests
 import json
 import pandas as pd
+import database_utils
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple
 import os
@@ -408,29 +409,31 @@ def main():
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         print(f"\n💾 Saving data to CSV files (timestamp: {timestamp})...")
         
-        # Save raw data
+        # Save raw data to database
+        print("💾 Saving raw data to database...")
+        if database_utils.save_consumption_data(combined_df, "consumption_raw"):
+            print("✅ Raw data saved to database successfully")
+            
+            # Create daily and monthly aggregates from raw data
+            print("Creating daily aggregates...")
+            database_utils.create_daily_aggregates()
+            print("Creating monthly aggregates...")
+            database_utils.create_monthly_aggregates()
+            print("✅ Aggregates created successfully")
+        else:
+            print("❌ Failed to save raw data to database")
+            
+        # Optional: Save timestamped backup to CSV
         raw_filename = f'octopus_consumption_raw_{timestamp}.csv'
-        combined_df.to_csv(raw_filename, index=False)
-        print(f"✅ Raw data saved to: {raw_filename}")
+        combined_df.to_csv(f'data/csv_backup/{raw_filename}', index=False)
+        print(f"✅ Backup saved to: data/csv_backup/{raw_filename}")
         
-        # Also save as the standard filename for dashboard compatibility
-        combined_df.to_csv('octopus_consumption_raw.csv', index=False)
-        print("✅ Raw data also saved to: octopus_consumption_raw.csv (for dashboard)")
-        
-        # Save summaries
+        # Save summary backups to CSV (optional)
         for summary_type, summary_df in summaries.items():
             if not summary_df.empty:
                 filename = f'octopus_consumption_{summary_type}_{timestamp}.csv'
-                summary_df.to_csv(filename, index=False)
-                print(f"✅ {summary_type.title()} summary saved to: {filename}")
-                
-                # Save daily summary with standard name for dashboard
-                if summary_type == 'daily':
-                    summary_df.to_csv('octopus_consumption_daily.csv', index=False)
-                    print("✅ Daily summary also saved to: octopus_consumption_daily.csv (for dashboard)")
-                elif summary_type == 'monthly':
-                    summary_df.to_csv('octopus_consumption_monthly.csv', index=False)
-                    print("✅ Monthly summary also saved to: octopus_consumption_monthly.csv (for dashboard)")
+                summary_df.to_csv(f'data/csv_backup/{filename}', index=False)
+                print(f"✅ {summary_type.title()} summary backup saved to: data/csv_backup/{filename}")
         
         # Statistics
         total_records = len(combined_df)
