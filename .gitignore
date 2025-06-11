@@ -297,4 +297,4 @@ test_*.bat
 # Batch utility files (.bat) - included by default  
 # README files - included by default
 # Requirements files - included by default
-# License files - included by default 
+# License files - included by default logs/

@@ -1,0 +1,319 @@
+"""
+Timeline manager for managing tariff periods and fetching rate data.
+"""
+
+from datetime import datetime, date, timedelta
+from typing import List, Dict, Optional
+import os
+
+from .models import TariffConfig, TariffPeriod, TariffTimeline, TariffType, FlowDirection, TariffRate, StandingCharge
+from .api_client import OctopusAPIClient
+from .logging_config import get_logger, get_structured_logger, TimingContext
+
+
+class TimelineManager:
+    """Manages tariff timelines and rate data fetching."""
+    
+    def __init__(self, config_file: str = "tariff_config.json"):
+        """Initialize the timeline manager."""
+        self.config_file = config_file
+        self.api_client = OctopusAPIClient()
+        self.logger = get_logger('timeline')
+        self.structured_logger = get_structured_logger('timeline')
+        
+        # Load existing config or create new one
+        if os.path.exists(config_file):
+            self.config = TariffConfig.load_from_file(config_file)
+            self.logger.info(f"Loaded existing config from {config_file}")
+        else:
+            self.config = TariffConfig()
+            self.logger.info(f"Created new config (file will be saved to {config_file})")
+        
+        self.logger.info(f"TimelineManager initialized - Import periods: {len(self.config.import_timeline.periods)}, Export periods: {len(self.config.export_timeline.periods)}")
+    
+    def save_config(self) -> None:
+        """Save the current configuration to file."""
+        try:
+            self.config.save_to_file(self.config_file)
+            self.logger.info(f"Configuration saved to {self.config_file}")
+        except Exception as e:
+            self.logger.error(f"Failed to save configuration: {e}")
+            raise
+    
+    def add_import_period(self, start_date: date, end_date: Optional[date], 
+                         product_code: str, display_name: str, tariff_type: TariffType, 
+                         region: str = "C", notes: str = "") -> TariffPeriod:
+        """Add a new import tariff period."""
+        tariff_code = self.api_client.build_tariff_code(product_code, region=region)
+        
+        period = TariffPeriod(
+            start_date=start_date,
+            end_date=end_date,
+            product_code=product_code,
+            tariff_code=tariff_code,
+            display_name=display_name,
+            tariff_type=tariff_type,
+            flow_direction=FlowDirection.IMPORT,
+            region=region,
+            notes=notes
+        )
+        
+        # Log the operation
+        period_data = {
+            'display_name': display_name,
+            'product_code': product_code,
+            'tariff_type': tariff_type.value,
+            'flow_direction': FlowDirection.IMPORT.value,
+            'start_date': start_date,
+            'end_date': end_date
+        }
+        
+        try:
+            self.config.import_timeline.add_period(period)
+            self.structured_logger.log_period_operation('add_import_period', period_data, success=True)
+            self.logger.info(f"Added import period: {display_name} ({start_date} - {end_date or 'Ongoing'})")
+            return period
+        except Exception as e:
+            self.structured_logger.log_period_operation('add_import_period', period_data, success=False, error=str(e))
+            raise
+    
+    def add_export_period(self, start_date: date, end_date: Optional[date], 
+                         product_code: str, display_name: str, tariff_type: TariffType, 
+                         region: str = "C", notes: str = "") -> TariffPeriod:
+        """Add a new export tariff period."""
+        tariff_code = self.api_client.build_tariff_code(product_code, region=region, 
+                                                       flow_direction="-OUTGOING")
+        
+        period = TariffPeriod(
+            start_date=start_date,
+            end_date=end_date,
+            product_code=product_code,
+            tariff_code=tariff_code,
+            display_name=display_name,
+            tariff_type=tariff_type,
+            flow_direction=FlowDirection.EXPORT,
+            region=region,
+            notes=notes
+        )
+        
+        self.config.export_timeline.add_period(period)
+        return period
+    
+    def fetch_rates_for_period(self, period: TariffPeriod) -> None:
+        """Fetch rate data from the API for a tariff period."""
+        fetch_start = period.start_date
+        fetch_end = period.end_date or date.today()
+        
+        # Convert to ISO format for API
+        period_from = fetch_start.strftime('%Y-%m-%dT00:00:00Z')
+        period_to = (fetch_end + timedelta(days=1)).strftime('%Y-%m-%dT00:00:00Z')
+        
+        period_data = {
+            'display_name': period.display_name,
+            'product_code': period.product_code,
+            'tariff_type': period.tariff_type.value,
+            'flow_direction': period.flow_direction.value,
+            'start_date': period.start_date,
+            'end_date': period.end_date
+        }
+        
+        self.logger.info(f"Fetching rates for {period.display_name} from {fetch_start} to {fetch_end}")
+        
+        with TimingContext(self.structured_logger, 'fetch_rates_for_period', {'period_name': period.display_name}):
+            try:
+                if period.tariff_type == TariffType.ECONOMY7:
+                    self._fetch_economy7_rates(period, period_from, period_to)
+                elif period.tariff_type == TariffType.AGILE:
+                    self._fetch_agile_rates(period, period_from, period_to)
+                else:
+                    self._fetch_standard_rates(period, period_from, period_to)
+                
+                self._fetch_standing_charges(period, period_from, period_to)
+                period.last_updated = datetime.now()
+                
+                rates_count = len(period.rates)
+                charges_count = len(period.standing_charges)
+                
+                self.structured_logger.log_period_operation(
+                    'fetch_rates', period_data, success=True, rates_fetched=rates_count
+                )
+                self.logger.info(f"Successfully fetched {rates_count} rates and {charges_count} standing charges for {period.display_name}")
+                
+            except Exception as e:
+                error_msg = str(e)
+                self.structured_logger.log_period_operation(
+                    'fetch_rates', period_data, success=False, error=error_msg
+                )
+                self.logger.error(f"Error fetching rates for {period.display_name}: {error_msg}")
+                raise
+    
+    def _fetch_economy7_rates(self, period: TariffPeriod, period_from: str, period_to: str) -> None:
+        """Fetch Economy 7 day and night rates."""
+        try:
+            # Clear existing rates
+            period.rates.clear()
+            
+            # Fetch day rates
+            day_rates = self.api_client.get_tariff_rates(
+                period.product_code, period.tariff_code, 
+                period_from, period_to, "day-unit-rates"
+            )
+            
+            for rate_data in day_rates:
+                rate = TariffRate(
+                    valid_from=datetime.fromisoformat(rate_data['valid_from'].replace('Z', '+00:00')),
+                    valid_to=datetime.fromisoformat(rate_data['valid_to'].replace('Z', '+00:00')) if rate_data['valid_to'] else None,
+                    value_exc_vat=rate_data['value_exc_vat'],
+                    value_inc_vat=rate_data['value_inc_vat'],
+                    rate_type="day"
+                )
+                period.rates.append(rate)
+            
+            # Fetch night rates
+            night_rates = self.api_client.get_tariff_rates(
+                period.product_code, period.tariff_code, 
+                period_from, period_to, "night-unit-rates"
+            )
+            
+            for rate_data in night_rates:
+                rate = TariffRate(
+                    valid_from=datetime.fromisoformat(rate_data['valid_from'].replace('Z', '+00:00')),
+                    valid_to=datetime.fromisoformat(rate_data['valid_to'].replace('Z', '+00:00')) if rate_data['valid_to'] else None,
+                    value_exc_vat=rate_data['value_exc_vat'],
+                    value_inc_vat=rate_data['value_inc_vat'],
+                    rate_type="night"
+                )
+                period.rates.append(rate)
+                
+        except Exception as e:
+            print(f"Error fetching Economy 7 rates: {e}")
+    
+    def _fetch_agile_rates(self, period: TariffPeriod, period_from: str, period_to: str) -> None:
+        """Fetch Agile half-hourly rates."""
+        try:
+            period.rates.clear()
+            
+            rates = self.api_client.get_tariff_rates(
+                period.product_code, period.tariff_code, 
+                period_from, period_to, "standard-unit-rates"
+            )
+            
+            for rate_data in rates:
+                rate = TariffRate(
+                    valid_from=datetime.fromisoformat(rate_data['valid_from'].replace('Z', '+00:00')),
+                    valid_to=datetime.fromisoformat(rate_data['valid_to'].replace('Z', '+00:00')) if rate_data['valid_to'] else None,
+                    value_exc_vat=rate_data['value_exc_vat'],
+                    value_inc_vat=rate_data['value_inc_vat'],
+                    rate_type="standard"
+                )
+                period.rates.append(rate)
+                
+        except Exception as e:
+            print(f"Error fetching Agile rates: {e}")
+    
+    def _fetch_standard_rates(self, period: TariffPeriod, period_from: str, period_to: str) -> None:
+        """Fetch standard rates for fixed/variable tariffs."""
+        try:
+            period.rates.clear()
+            
+            rates = self.api_client.get_tariff_rates(
+                period.product_code, period.tariff_code, 
+                period_from, period_to, "standard-unit-rates"
+            )
+            
+            for rate_data in rates:
+                rate = TariffRate(
+                    valid_from=datetime.fromisoformat(rate_data['valid_from'].replace('Z', '+00:00')),
+                    valid_to=datetime.fromisoformat(rate_data['valid_to'].replace('Z', '+00:00')) if rate_data['valid_to'] else None,
+                    value_exc_vat=rate_data['value_exc_vat'],
+                    value_inc_vat=rate_data['value_inc_vat'],
+                    rate_type="standard"
+                )
+                period.rates.append(rate)
+                
+        except Exception as e:
+            print(f"Error fetching standard rates: {e}")
+    
+    def _fetch_standing_charges(self, period: TariffPeriod, period_from: str, period_to: str) -> None:
+        """Fetch standing charges."""
+        try:
+            period.standing_charges.clear()
+            
+            charges = self.api_client.get_standing_charges(
+                period.product_code, period.tariff_code, 
+                period_from, period_to
+            )
+            
+            for charge_data in charges:
+                charge = StandingCharge(
+                    valid_from=datetime.fromisoformat(charge_data['valid_from'].replace('Z', '+00:00')),
+                    valid_to=datetime.fromisoformat(charge_data['valid_to'].replace('Z', '+00:00')) if charge_data['valid_to'] else None,
+                    value_exc_vat=charge_data['value_exc_vat'],
+                    value_inc_vat=charge_data['value_inc_vat']
+                )
+                period.standing_charges.append(charge)
+                
+        except Exception as e:
+            print(f"Error fetching standing charges: {e}")
+    
+    def get_rate_at_datetime(self, dt: datetime, flow_direction: FlowDirection, 
+                           rate_type: str = "standard") -> Optional['TariffRate']:
+        """Get the rate that was active at a specific datetime."""
+        timeline = (self.config.import_timeline if flow_direction == FlowDirection.IMPORT 
+                   else self.config.export_timeline)
+        
+        period = timeline.get_period_at_date(dt.date())
+        if not period:
+            self.structured_logger.log_rate_lookup(
+                dt.isoformat(), flow_direction.value, rate_type, None, None
+            )
+            self.logger.debug(f"No period found for {dt.date()} in {flow_direction.value} timeline")
+            return None
+        
+        rate = period.get_rate_at_time(dt, rate_type)
+        rate_value = rate.value_inc_vat if rate else None
+        
+        self.structured_logger.log_rate_lookup(
+            dt.isoformat(), flow_direction.value, rate_type, rate_value, period.display_name
+        )
+        
+        if rate:
+            self.logger.debug(f"Found rate {rate_value}p/kWh for {dt} in period {period.display_name}")
+        else:
+            self.logger.debug(f"No rate found for {dt} in period {period.display_name}")
+        
+        return rate
+    
+    def get_timeline_summary(self) -> Dict:
+        """Get a summary of the configured timelines."""
+        import_periods = len(self.config.import_timeline.periods)
+        export_periods = len(self.config.export_timeline.periods)
+        
+        import_active = self.config.import_timeline.get_active_period()
+        export_active = self.config.export_timeline.get_active_period()
+        
+        return {
+            'import_periods': import_periods,
+            'export_periods': export_periods,
+            'import_active': import_active.display_name if import_active else None,
+            'export_active': export_active.display_name if export_active else None,
+            'validation': self.validate_timelines()
+        }
+    
+    def validate_timelines(self) -> Dict[str, Dict]:
+        """Validate both timelines for issues."""
+        import_issues = self.config.import_timeline.validate()
+        export_issues = self.config.export_timeline.validate()
+        
+        # Log validation results
+        self.structured_logger.log_validation('import', import_issues)
+        self.structured_logger.log_validation('export', export_issues)
+        
+        return {
+            'import': import_issues,
+            'export': export_issues
+        }
+    
+    def search_available_products(self, search_term: str) -> List[Dict]:
+        """Search for available Octopus products."""
+        return self.api_client.search_products_by_name(search_term)
