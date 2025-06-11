@@ -137,16 +137,41 @@ class OctopusAPIClient:
             
             params = {
                 'period_from': period_from,
-                'period_to': period_to
+                'period_to': period_to,
+                'page_size': 1500  # Increase page size to reduce number of requests
             }
             
             self.logger.debug(f"Fetching {rate_type} for {tariff_code} from {period_from} to {period_to}")
-            response = self._make_request('GET', url, params)
-            rates_data = response.json()
-            rates = rates_data.get('results', [])
             
-            self.logger.info(f"Retrieved {len(rates)} {rate_type} for {tariff_code}")
-            return rates
+            all_rates = []
+            current_url = url
+            page_count = 0
+            
+            # Handle pagination
+            while current_url:
+                page_count += 1
+                if page_count == 1:
+                    response = self._make_request('GET', current_url, params)
+                else:
+                    # Subsequent requests use the full URL with embedded params
+                    response = self._make_request('GET', current_url)
+                
+                rates_data = response.json()
+                page_results = rates_data.get('results', [])
+                all_rates.extend(page_results)
+                
+                # Check for next page
+                current_url = rates_data.get('next')
+                
+                self.logger.debug(f"Page {page_count}: Got {len(page_results)} rates, total so far: {len(all_rates)}")
+                
+                # Safety check to prevent infinite loops
+                if page_count > 50:
+                    self.logger.warning(f"Stopped pagination after 50 pages for safety (got {len(all_rates)} rates)")
+                    break
+            
+            self.logger.info(f"Retrieved {len(all_rates)} {rate_type} for {tariff_code} across {page_count} pages")
+            return all_rates
     
     def get_standing_charges(self, product_code: str, tariff_code: str, 
                            period_from: str, period_to: str) -> List[Dict]:
@@ -170,16 +195,38 @@ class OctopusAPIClient:
             
             params = {
                 'period_from': period_from,
-                'period_to': period_to
+                'period_to': period_to,
+                'page_size': 1500
             }
             
             self.logger.debug(f"Fetching standing charges for {tariff_code} from {period_from} to {period_to}")
-            response = self._make_request('GET', url, params)
-            charges_data = response.json()
-            charges = charges_data.get('results', [])
             
-            self.logger.info(f"Retrieved {len(charges)} standing charges for {tariff_code}")
-            return charges
+            all_charges = []
+            current_url = url
+            page_count = 0
+            
+            # Handle pagination
+            while current_url:
+                page_count += 1
+                if page_count == 1:
+                    response = self._make_request('GET', current_url, params)
+                else:
+                    response = self._make_request('GET', current_url)
+                
+                charges_data = response.json()
+                page_results = charges_data.get('results', [])
+                all_charges.extend(page_results)
+                
+                # Check for next page
+                current_url = charges_data.get('next')
+                
+                # Safety check for standing charges (shouldn't need many pages)
+                if page_count > 10:
+                    self.logger.warning(f"Stopped standing charges pagination after 10 pages (got {len(all_charges)} charges)")
+                    break
+            
+            self.logger.info(f"Retrieved {len(all_charges)} standing charges for {tariff_code}")
+            return all_charges
     
     def build_tariff_code(self, product_code: str, fuel_type: str = "E", 
                          payment_method: str = "1R", region: str = "C", 
@@ -316,7 +363,11 @@ class OctopusAPIClient:
             test_from = "2024-01-01T00:00:00Z"
             test_to = "2024-01-02T00:00:00Z"
             
-            # Quick test for Economy 7 (only if pattern didn't already identify it)
+            # Skip API testing for obviously non-Economy 7 products to reduce errors
+            if any(obvious in product_lower for obvious in ["agile", "go", "flux", "intelli"]):
+                return "variable"  # These are definitely not Economy 7
+            
+            # Quick test for Economy 7 (only for ambiguous cases)
             try:
                 day_rates = self.get_tariff_rates(product_code, tariff_code, test_from, test_to, "day-unit-rates")
                 if len(day_rates) > 0:

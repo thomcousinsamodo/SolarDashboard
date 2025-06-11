@@ -380,7 +380,7 @@ def add_period_form():
                                 <strong id="manual_entry_title">Economy 7 Manual Entry:</strong> <span id="manual_entry_text">Since historical Economy 7 data is not available via API, please enter the day and night rates manually.</span>
                             </div>
                             
-                            <div class="row">
+                            <div class="row" id="vat_controls_row">
                                 <div class="col-md-4">
                                     <div class="mb-3">
                                         <label for="vat_rate" class="form-label">VAT Rate (%)</label>
@@ -403,7 +403,7 @@ def add_period_form():
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label for="day_rate_input" class="form-label">Day Rate (p/kWh)</label>
-                                        <input type="number" step="0.001" class="form-control" id="day_rate_input" name="day_rate_input" onchange="calculateVAT()" required>
+                                        <input type="number" step="0.001" class="form-control" id="day_rate_input" name="day_rate_input" onchange="calculateVAT()">
                                         <div class="form-text">
                                             <span id="day_rate_calculated"></span>
                                         </div>
@@ -412,7 +412,7 @@ def add_period_form():
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label for="night_rate_input" class="form-label">Night Rate (p/kWh)</label>
-                                        <input type="number" step="0.001" class="form-control" id="night_rate_input" name="night_rate_input" onchange="calculateVAT()" required>
+                                        <input type="number" step="0.001" class="form-control" id="night_rate_input" name="night_rate_input" onchange="calculateVAT()">
                                         <div class="form-text">
                                             <span id="night_rate_calculated"></span>
                                         </div>
@@ -424,7 +424,7 @@ def add_period_form():
                                 <div class="col-md-6">
                                     <div class="mb-3">
                                         <label for="standing_charge_input" class="form-label">Standing Charge (p/day)</label>
-                                        <input type="number" step="0.001" class="form-control" id="standing_charge_input" name="standing_charge_input" onchange="calculateVAT()" required>
+                                        <input type="number" step="0.001" class="form-control" id="standing_charge_input" name="standing_charge_input" onchange="calculateVAT()">
                                         <div class="form-text">
                                             <span id="standing_charge_calculated"></span>
                                         </div>
@@ -482,7 +482,7 @@ def add_period_form():
                 </div>
                 
                 <div class="mb-3">
-                    <button type="submit" class="btn btn-primary">Add Period</button>
+                    <button type="submit" class="btn btn-primary" id="addPeriodBtn">Add Period</button>
                     <a href="/periods" class="btn btn-secondary">Cancel</a>
                 </div>
             </form>
@@ -586,6 +586,10 @@ def add_period_form():
                 // Clear and disable tariff selection
                 document.getElementById('available_tariffs').value = '';
                 
+                // Make manual entry fields required
+                document.getElementById('day_rate_input').required = true;
+                document.getElementById('standing_charge_input').required = true;
+                
                 // Update UI text based on reason for manual entry
                 if (selectedType === 'economy7') {
                     document.getElementById('manual_entry_title').textContent = 'Economy 7 Manual Entry:';
@@ -593,12 +597,20 @@ def add_period_form():
                     document.getElementById('product_code').value = 'MANUAL-ECONOMY7-' + new Date().toISOString().split('T')[0];
                     // Show night rate field for Economy 7
                     document.querySelector('label[for="night_rate_input"]').parentElement.parentElement.style.display = 'block';
+                    document.getElementById('night_rate_input').required = true;
                 } else if (flowDirection === 'export') {
                     document.getElementById('manual_entry_title').textContent = 'Export Tariff Manual Entry:';
                     document.getElementById('manual_entry_text').textContent = 'Export tariff rates are not available via the public API. Please enter rates manually if known, or leave blank to add rates later.';
                     document.getElementById('product_code').value = 'MANUAL-EXPORT-' + new Date().toISOString().split('T')[0];
                     // Hide night rate field for export (single rate)
                     document.querySelector('label[for="night_rate_input"]').parentElement.parentElement.style.display = 'none';
+                    document.getElementById('night_rate_input').required = false;
+                    
+                    // Hide VAT controls for exports (VAT doesn't apply to exports)
+                    document.getElementById('vat_controls_row').style.display = 'none';
+                    // Set defaults for exports
+                    document.getElementById('vat_rate').value = '0';
+                    document.getElementById('rate_basis').value = 'exc_vat';
                 }
                 
                 document.getElementById('product_code').readOnly = true;
@@ -613,6 +625,18 @@ def add_period_form():
                 document.getElementById('product_code').readOnly = false;
                 // Show night rate field for normal cases
                 document.querySelector('label[for="night_rate_input"]').parentElement.parentElement.style.display = 'block';
+                
+                // Show VAT controls for non-export tariffs
+                document.getElementById('vat_controls_row').style.display = 'flex';
+                // Restore VAT defaults
+                document.getElementById('vat_rate').value = '20';
+                document.getElementById('rate_basis').value = 'inc_vat';
+                
+                // Remove required from manual entry fields when hidden
+                document.getElementById('day_rate_input').required = false;
+                document.getElementById('night_rate_input').required = false;
+                document.getElementById('standing_charge_input').required = false;
+                
                 // Re-populate dropdown when tariff type changes
                 populateTariffDropdown(availableProducts);
             }
@@ -622,6 +646,7 @@ def add_period_form():
         document.getElementById('flow_direction').addEventListener('change', filterByTariffType);
         
         function calculateVAT() {
+            const flowDirection = document.getElementById('flow_direction').value;
             const vatRate = parseFloat(document.getElementById('vat_rate').value) || 20;
             const rateBasis = document.getElementById('rate_basis').value;
             const vatMultiplier = vatRate / 100;
@@ -633,22 +658,33 @@ def add_period_form():
             let dayRateExcVat, dayRateIncVat, nightRateExcVat, nightRateIncVat;
             let standingChargeExcVat, standingChargeIncVat;
             
-            if (rateBasis === 'inc_vat') {
-                // User entered inc VAT values, calculate exc VAT
-                dayRateExcVat = dayRateInput / (1 + vatMultiplier);
-                dayRateIncVat = dayRateInput;
-                nightRateExcVat = nightRateInput / (1 + vatMultiplier);
+            // For export rates, no VAT applies (they are sales, not purchases)
+            if (flowDirection === 'export') {
+                dayRateExcVat = dayRateInput;
+                dayRateIncVat = dayRateInput;  // Same value since no VAT
+                nightRateExcVat = nightRateInput;
                 nightRateIncVat = nightRateInput;
-                standingChargeExcVat = standingChargeInput / (1 + vatMultiplier);
+                standingChargeExcVat = standingChargeInput;
                 standingChargeIncVat = standingChargeInput;
             } else {
-                // User entered exc VAT values, calculate inc VAT
-                dayRateExcVat = dayRateInput;
-                dayRateIncVat = dayRateInput * (1 + vatMultiplier);
-                nightRateExcVat = nightRateInput;
-                nightRateIncVat = nightRateInput * (1 + vatMultiplier);
-                standingChargeExcVat = standingChargeInput;
-                standingChargeIncVat = standingChargeInput * (1 + vatMultiplier);
+            
+                if (rateBasis === 'inc_vat') {
+                    // User entered inc VAT values, calculate exc VAT
+                    dayRateExcVat = dayRateInput / (1 + vatMultiplier);
+                    dayRateIncVat = dayRateInput;
+                    nightRateExcVat = nightRateInput / (1 + vatMultiplier);
+                    nightRateIncVat = nightRateInput;
+                    standingChargeExcVat = standingChargeInput / (1 + vatMultiplier);
+                    standingChargeIncVat = standingChargeInput;
+                } else {
+                    // User entered exc VAT values, calculate inc VAT
+                    dayRateExcVat = dayRateInput;
+                    dayRateIncVat = dayRateInput * (1 + vatMultiplier);
+                    nightRateExcVat = nightRateInput;
+                    nightRateIncVat = nightRateInput * (1 + vatMultiplier);
+                    standingChargeExcVat = standingChargeInput;
+                    standingChargeIncVat = standingChargeInput * (1 + vatMultiplier);
+                }
             }
             
             // Update hidden fields
@@ -660,7 +696,12 @@ def add_period_form():
             document.getElementById('standing_charge_inc_vat').value = standingChargeIncVat.toFixed(3);
             
             // Update display text
-            if (rateBasis === 'inc_vat') {
+            if (flowDirection === 'export') {
+                // For exports, don't show VAT calculations
+                document.getElementById('day_rate_calculated').textContent = `(No VAT applies to exports)`;
+                document.getElementById('night_rate_calculated').textContent = `(No VAT applies to exports)`;
+                document.getElementById('standing_charge_calculated').textContent = `(No VAT applies to exports)`;
+            } else if (rateBasis === 'inc_vat') {
                 document.getElementById('day_rate_calculated').textContent = `Exc VAT: ${dayRateExcVat.toFixed(3)}p`;
                 document.getElementById('night_rate_calculated').textContent = `Exc VAT: ${nightRateExcVat.toFixed(3)}p`;
                 document.getElementById('standing_charge_calculated').textContent = `Exc VAT: ${standingChargeExcVat.toFixed(3)}p`;
@@ -670,6 +711,56 @@ def add_period_form():
                 document.getElementById('standing_charge_calculated').textContent = `Inc VAT: ${standingChargeIncVat.toFixed(3)}p`;
             }
         }
+        
+        // Add form submission debugging
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.querySelector('form');
+            const addButton = document.getElementById('addPeriodBtn');
+            
+            if (form && addButton) {
+                // Debug form submission
+                form.addEventListener('submit', function(e) {
+                    console.log('Form submission attempted');
+                    
+                    // Check for validation issues
+                    const requiredFields = form.querySelectorAll('[required]');
+                    let hasErrors = false;
+                    
+                    requiredFields.forEach(field => {
+                        if (!field.value.trim()) {
+                            console.log('Missing required field:', field.name || field.id);
+                            field.style.border = '2px solid red';
+                            hasErrors = true;
+                        } else {
+                            field.style.border = '';
+                        }
+                    });
+                    
+                    if (hasErrors) {
+                        e.preventDefault();
+                        alert('Please fill in all required fields');
+                        return false;
+                    }
+                    
+                    // Log form data being submitted
+                    const formData = new FormData(form);
+                    console.log('Form data being submitted:');
+                    for (let [key, value] of formData.entries()) {
+                        console.log(key + ':', value);
+                    }
+                    
+                    // Disable button to prevent double submission
+                    addButton.disabled = true;
+                    addButton.textContent = 'Adding...';
+                });
+                
+                // Re-enable button if user navigates back
+                window.addEventListener('pageshow', function() {
+                    addButton.disabled = false;
+                    addButton.textContent = 'Add Period';
+                });
+            }
+        });
         </script>
     </body>
     </html>
@@ -681,6 +772,9 @@ def add_period():
     try:
         mgr = get_manager()
         
+        # Log the received form data for debugging
+        logger.info(f"Add period form data: {dict(request.form)}")
+        
         flow_direction = request.form['flow_direction']
         start_date = datetime.strptime(request.form['start_date'], '%Y-%m-%d').date()
         end_date = datetime.strptime(request.form['end_date'], '%Y-%m-%d').date() if request.form['end_date'] else None
@@ -689,6 +783,8 @@ def add_period():
         tariff_type = TariffType(request.form['tariff_type'])
         region = request.form.get('region', 'C')
         notes = request.form.get('notes', '')
+        
+        logger.info(f"Creating {flow_direction} period: {display_name} ({tariff_type.value}) for product {product_code}")
         
         if flow_direction == 'import':
             period = mgr.add_import_period(
@@ -725,11 +821,16 @@ def add_period():
             # Export tariffs require manual entry (not available via API)
             if request.form.get('day_rate_exc_vat'):  # Check if manual rates were provided
                 try:
+                    # For export rates, only use the exc_vat value (no VAT on export sales)
+                    # Store in pence to match API rate units
+                    export_rate = float(request.form.get('day_rate_exc_vat', 0))
+                    standing_charge = float(request.form.get('standing_charge_exc_vat', 0)) / 100  # SC still in pence/day
+                    
                     manual_rates = {
-                        'day_rate_exc_vat': float(request.form.get('day_rate_exc_vat', 0)) / 100,  # Reuse day_rate as export_rate
-                        'day_rate_inc_vat': float(request.form.get('day_rate_inc_vat', 0)) / 100,
-                        'standing_charge_exc_vat': float(request.form.get('standing_charge_exc_vat', 0)) / 100,
-                        'standing_charge_inc_vat': float(request.form.get('standing_charge_inc_vat', 0)) / 100,
+                        'day_rate_exc_vat': export_rate,  # Reuse day_rate as export_rate
+                        'day_rate_inc_vat': export_rate,  # Same as exc_vat since no VAT on exports
+                        'standing_charge_exc_vat': standing_charge,
+                        'standing_charge_inc_vat': standing_charge,  # Same as exc_vat for exports
                     }
                     
                     # Store manual export rates
@@ -744,14 +845,41 @@ def add_period():
                 logger.info(f"Export period created without rates (manual entry required): {display_name}")
         else:
             # Use API for import tariff types (except Economy 7)
-            mgr.fetch_rates_for_period(period)
+            try:
+                mgr.fetch_rates_for_period(period)
+                logger.info(f"Successfully fetched API rates for {display_name}")
+            except Exception as e:
+                logger.error(f"Failed to fetch API rates for {display_name}: {e}")
+                # Continue anyway - period will be created without rates
+                # User can manually add rates or try refreshing later
         
         mgr.save_config()
         return redirect('/periods')
         
     except Exception as e:
-        logger.error(f"Error adding period: {e}")
-        return f"Error adding period: {str(e)}", 400
+        import traceback
+        error_details = traceback.format_exc()
+        logger.error(f"Error adding period: {e}\nFull traceback:\n{error_details}")
+        
+        # Create a proper error page instead of just returning text
+        return f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Error - Octopus Tariff Tracker</title>
+            <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+        </head>
+        <body>
+            <div class="container mt-4">
+                <div class="alert alert-danger">
+                    <h4>Error Adding Period</h4>
+                    <p><strong>Error:</strong> {str(e)}</p>
+                    <p><a href="/add-period" class="btn btn-primary">Try Again</a></p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """, 400
 
 @app.route('/rate-lookup')
 def rate_lookup_form():
@@ -838,9 +966,20 @@ def rate_lookup_form():
                 const contentDiv = document.getElementById('resultContent');
                 
                 if (data.success) {
+                    let rateHtml = '';
+                    if (data.rate.is_export) {
+                        // Export rates don't have VAT
+                        rateHtml = `<p><strong>Rate:</strong> ${data.rate.value}p/kWh</p>`;
+                    } else {
+                        // Import rates show both inc and exc VAT
+                        rateHtml = `
+                            <p><strong>Rate:</strong> ${data.rate.value_inc_vat}p/kWh (inc VAT)</p>
+                            <p><strong>Rate:</strong> ${data.rate.value_exc_vat}p/kWh (exc VAT)</p>
+                        `;
+                    }
+                    
                     contentDiv.innerHTML = `
-                        <p><strong>Rate:</strong> ${data.rate.value_inc_vat}p/kWh (inc VAT)</p>
-                        <p><strong>Rate:</strong> ${data.rate.value_exc_vat}p/kWh (exc VAT)</p>
+                        ${rateHtml}
                         <p><strong>Valid From:</strong> ${new Date(data.rate.valid_from).toLocaleString()}</p>
                         <p><strong>Valid To:</strong> ${data.rate.valid_to ? new Date(data.rate.valid_to).toLocaleString() : 'Ongoing'}</p>
                         <p><strong>Rate Type:</strong> ${data.rate.rate_type}</p>
@@ -871,25 +1010,47 @@ def rate_lookup_form():
 def api_rate_lookup():
     """API endpoint for rate lookup."""
     try:
+        from zoneinfo import ZoneInfo
+        
         mgr = get_manager()
         
         datetime_str = request.json['datetime']
         flow_direction = FlowDirection(request.json['flow_direction'])
         
+        # Parse the datetime string as UK local time first
         dt = datetime.fromisoformat(datetime_str)
+        
+        # If the datetime is naive (no timezone), assume it's UK local time
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=ZoneInfo('Europe/London'))
+        
         rate = mgr.get_rate_at_datetime(dt, flow_direction)  # Auto-detect rate type
         
         if rate:
-            return jsonify({
-                'success': True,
-                'rate': {
-                    'value_inc_vat': rate.value_inc_vat,
-                    'value_exc_vat': rate.value_exc_vat,
-                    'valid_from': rate.valid_from.isoformat(),
-                    'valid_to': rate.valid_to.isoformat() if rate.valid_to else None,
-                    'rate_type': rate.rate_type
-                }
-            })
+            # For export rates, VAT doesn't apply (no VAT on energy sales)
+            if flow_direction == FlowDirection.EXPORT:
+                return jsonify({
+                    'success': True,
+                    'rate': {
+                        'value': rate.value_exc_vat,  # Already in pence from API
+                        'valid_from': rate.valid_from.isoformat(),
+                        'valid_to': rate.valid_to.isoformat() if rate.valid_to else None,
+                        'rate_type': rate.rate_type,
+                        'is_export': True
+                    }
+                })
+            else:
+                return jsonify({
+                    'success': True,
+                    'rate': {
+                        'value_inc_vat': rate.value_inc_vat,  # Already in pence from API
+                        'value_exc_vat': rate.value_exc_vat,  # Already in pence from API
+                        'valid_from': rate.valid_from.isoformat(),
+                        'valid_to': rate.valid_to.isoformat() if rate.valid_to else None,
+                        'rate_type': rate.rate_type,
+                        'is_export': False
+                    }
+                })
         else:
             return jsonify({
                 'success': False,

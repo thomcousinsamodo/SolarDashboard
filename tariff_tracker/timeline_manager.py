@@ -373,11 +373,18 @@ class TimelineManager:
         return self.api_client.search_products_by_name(search_term)
     
     def refresh_all_rates(self) -> None:
-        """Refresh rates for all periods in both timelines."""
+        """Refresh rates for all periods in both timelines.
+        
+        Skips periods with manual rates (Economy 7 and export tariffs) to preserve user data.
+        """
         self.logger.info("Starting refresh of all rates")
         
         # Refresh import timeline
         for period in self.config.import_timeline.periods:
+            if self._should_skip_refresh(period):
+                self.logger.info(f"Skipping refresh for {period.display_name} (has manual rates)")
+                continue
+                
             try:
                 self.fetch_rates_for_period(period)
                 self.logger.info(f"Refreshed rates for import period: {period.display_name}")
@@ -386,6 +393,10 @@ class TimelineManager:
         
         # Refresh export timeline
         for period in self.config.export_timeline.periods:
+            if self._should_skip_refresh(period):
+                self.logger.info(f"Skipping refresh for {period.display_name} (has manual rates)")
+                continue
+                
             try:
                 self.fetch_rates_for_period(period)
                 self.logger.info(f"Refreshed rates for export period: {period.display_name}")
@@ -394,6 +405,29 @@ class TimelineManager:
         
         self.save_config()
         self.logger.info("Completed refresh of all rates")
+    
+    def _should_skip_refresh(self, period: TariffPeriod) -> bool:
+        """Determine if a period should be skipped during refresh to preserve manual data.
+        
+        Args:
+            period: The tariff period to check
+            
+        Returns:
+            True if the period should be skipped (has manual rates)
+        """
+        # Skip Economy 7 periods (always manual)
+        if period.tariff_type == TariffType.ECONOMY7:
+            return True
+        
+        # Skip export periods (API doesn't provide export rates)
+        if period.flow_direction == FlowDirection.EXPORT:
+            return True
+        
+        # Skip periods with product codes indicating manual entry
+        if period.product_code.startswith('MANUAL-'):
+            return True
+        
+        return False
     
     def delete_period(self, flow_direction: FlowDirection, period_index: int) -> bool:
         """Delete a period from the specified timeline."""
@@ -482,29 +516,42 @@ class TimelineManager:
             
             log_msg = f"Day={manual_rates['day_rate_inc_vat']:.3f}p, Night={manual_rates['night_rate_inc_vat']:.3f}p"
         else:
-            # Create single rate for export tariffs
+            # Create single rate for export tariffs (no VAT on export sales)
+            export_rate_value = manual_rates.get('export_rate_exc_vat', manual_rates.get('day_rate_exc_vat', 0))
             export_rate = TariffRate(
                 valid_from=start_datetime,
                 valid_to=end_datetime,
-                value_exc_vat=manual_rates.get('export_rate_exc_vat', manual_rates.get('day_rate_exc_vat', 0)),
-                value_inc_vat=manual_rates.get('export_rate_inc_vat', manual_rates.get('day_rate_inc_vat', 0)),
+                value_exc_vat=export_rate_value,
+                value_inc_vat=export_rate_value,  # Same as exc_vat since no VAT applies to exports
                 rate_type="standard"
             )
             period.rates.append(export_rate)
             
-            log_msg = f"Export={manual_rates.get('export_rate_inc_vat', manual_rates.get('day_rate_inc_vat', 0)):.3f}p"
+            log_msg = f"Export={export_rate_value:.3f}p"
         
         # Create standing charge
-        standing_charge = StandingCharge(
-            valid_from=start_datetime,
-            valid_to=end_datetime,
-            value_exc_vat=manual_rates['standing_charge_exc_vat'],
-            value_inc_vat=manual_rates['standing_charge_inc_vat']
-        )
+        if is_economy7:
+            # Economy 7 standing charges have VAT
+            standing_charge = StandingCharge(
+                valid_from=start_datetime,
+                valid_to=end_datetime,
+                value_exc_vat=manual_rates['standing_charge_exc_vat'],
+                value_inc_vat=manual_rates['standing_charge_inc_vat']
+            )
+        else:
+            # Export standing charges don't have VAT
+            standing_charge_value = manual_rates['standing_charge_exc_vat']
+            standing_charge = StandingCharge(
+                valid_from=start_datetime,
+                valid_to=end_datetime,
+                value_exc_vat=standing_charge_value,
+                value_inc_vat=standing_charge_value  # Same as exc_vat since no VAT on exports
+            )
         period.standing_charges.append(standing_charge)
         
         # Update last updated timestamp
         period.last_updated = datetime.now()
         
         tariff_type = "Economy 7" if is_economy7 else "export"
-        self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}, SC={manual_rates['standing_charge_inc_vat']:.3f}p")
+        standing_charge_log = manual_rates['standing_charge_inc_vat'] if is_economy7 else manual_rates['standing_charge_exc_vat']
+        self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}, SC={standing_charge_log:.3f}p")
