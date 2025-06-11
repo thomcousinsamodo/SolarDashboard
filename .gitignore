@@ -293,6 +293,25 @@ docs/_build/
 temp_*.bat
 test_*.bat
 
+# Temporary Items
+.apdisk
+
+# Octopus Energy API Credentials and Sensitive Data
+oct_api.txt
+account_info.txt
+*.api_key
+*.credentials
+
+# Consumption and Pricing Data Files (may contain personal energy usage)
+octopus_consumption_*.csv
+pricing_raw.csv
+energy_data_*.csv
+
+# Logs and temporary processing files
+*.log
+timeline_operations.log*
+processing_*.tmp
+
 # ===== KEEP THESE FILES =====
 # Source code files (.py) - included by default
 # Batch utility files (.bat) - included by default  

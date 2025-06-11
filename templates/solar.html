@@ -310,6 +310,8 @@ function updateAllCharts() {
         options: formData.getAll('options')
     };
     
+    console.log('Updating charts with data:', data); // Debug log
+    
     // Update charts and summary in parallel
     Promise.all([
         updateSummaryStats(data),
@@ -324,6 +326,8 @@ function updateAllCharts() {
 
 // Update summary statistics
 function updateSummaryStats(data) {
+    console.log('Sending summary request with:', data); // Debug log
+    
     return fetch('/api/solar-summary', {
         method: 'POST',
         headers: {
@@ -333,14 +337,18 @@ function updateSummaryStats(data) {
     })
     .then(response => response.json())
     .then(result => {
+        console.log('Summary API response:', result); // Debug log
+        
         if (result.success) {
             const stats = result.stats;
             
-            // Update summary cards
-            document.getElementById('total-import').textContent = stats.total_import.toFixed(1);
-            document.getElementById('total-export').textContent = stats.total_export.toFixed(1);
-            document.getElementById('net-consumption').textContent = stats.net_consumption.toFixed(1);
+            // Update summary cards - main metric values (large numbers)
+            document.getElementById('total-import').textContent = stats.total_import.toFixed(1) + ' kWh';
+            document.getElementById('total-export').textContent = stats.total_export.toFixed(1) + ' kWh';
+            document.getElementById('net-consumption').textContent = stats.net_consumption.toFixed(1) + ' kWh';
             document.getElementById('self-sufficiency').textContent = stats.self_sufficiency.toFixed(1) + '%';
+            
+            // Update summary cards - small text (averages)
             document.getElementById('avg-daily-import').textContent = stats.avg_daily_import.toFixed(1) + ' kWh/day avg';
             document.getElementById('avg-daily-export').textContent = stats.avg_daily_export.toFixed(1) + ' kWh/day avg';
             
@@ -353,7 +361,14 @@ function updateSummaryStats(data) {
             document.getElementById('insight-avg-daily-export').textContent = stats.avg_daily_export.toFixed(1) + ' kWh/day';
             document.getElementById('insight-net-daily').textContent = (stats.avg_daily_import - stats.avg_daily_export).toFixed(1) + ' kWh/day';
             document.getElementById('insight-generation-efficiency').textContent = stats.generation_efficiency.toFixed(1) + '%';
+            
+            console.log('Summary cards updated successfully'); // Debug log
+        } else {
+            console.error('Summary API failed:', result.error);
         }
+    })
+    .catch(error => {
+        console.error('Summary API error:', error);
     });
 }
 
@@ -436,6 +451,7 @@ function setQuickRange(range) {
         endDate.value = today.toISOString().split('T')[0];
     }
     
+    console.log('Set date range for', range, ':', startDate.value, 'to', endDate.value); // Debug log
     updateAllCharts();
 }
 
@@ -454,10 +470,17 @@ document.addEventListener('DOMContentLoaded', function() {
     {% endif %}
     
     // Add event listeners for date changes
-    startDateInput.addEventListener('change', updateAllCharts);
-    endDateInput.addEventListener('change', updateAllCharts);
+    startDateInput.addEventListener('change', function() {
+        console.log('Start date changed to:', this.value); // Debug log
+        updateAllCharts();
+    });
+    endDateInput.addEventListener('change', function() {
+        console.log('End date changed to:', this.value); // Debug log
+        updateAllCharts();
+    });
     
     // Set default date range to last 30 days and load initial charts
+    console.log('Setting initial date range to last 30 days'); // Debug log
     setQuickRange('last30');
     {% endif %}
 });

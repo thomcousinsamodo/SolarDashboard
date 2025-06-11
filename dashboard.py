@@ -162,8 +162,8 @@ colors = {
 @app.route('/')
 def index():
     """Main unified dashboard page."""
-    # Get solar stats
-    solar_stats = calculate_summary_stats(daily_df)
+    # Get solar stats with comparisons
+    solar_stats = get_dashboard_solar_stats()
     
     # Get tariff summary if available
     tariff_summary = {}
@@ -176,11 +176,164 @@ def index():
             print(f"Error getting tariff summary: {e}")
             tariff_summary = {}
     
+    # Check if solar data is available
+    solar_data = load_solar_data()
+    daily_df = solar_data['daily']
+    solar_data_available = not daily_df.empty
+    
     return render_template('index.html', 
                          solar_stats=solar_stats, 
                          tariff_summary=tariff_summary,
                          tariff_available=TARIFF_AVAILABLE,
-                         solar_data_available=not daily_df.empty)
+                         solar_data_available=solar_data_available)
+
+def get_dashboard_solar_stats():
+    """Get solar stats for the main dashboard with weekly focus and comparisons."""
+    from datetime import datetime, timedelta
+    import pandas as pd
+    
+    # Load solar data
+    solar_data = load_solar_data()
+    daily_df = solar_data['daily']
+    
+    if daily_df.empty:
+        return create_empty_solar_stats()
+    
+    # Get date ranges
+    today = datetime.now().date()
+    
+    # Current week (last 7 days)
+    week_start = today - timedelta(days=6)  # 7 days including today
+    week_start_pd = pd.to_datetime(week_start)
+    current_week_df = daily_df[daily_df['date'] >= week_start_pd]
+    
+    # Previous week (7 days before current week)
+    prev_week_start = week_start - timedelta(days=7)
+    prev_week_end = week_start - timedelta(days=1)
+    prev_week_start_pd = pd.to_datetime(prev_week_start)
+    prev_week_end_pd = pd.to_datetime(prev_week_end)
+    prev_week_df = daily_df[
+        (daily_df['date'] >= prev_week_start_pd) & 
+        (daily_df['date'] <= prev_week_end_pd)
+    ]
+    
+    # Previous month (30 days before current week)
+    month_start = week_start - timedelta(days=30)
+    month_end = week_start - timedelta(days=1)
+    month_start_pd = pd.to_datetime(month_start)
+    month_end_pd = pd.to_datetime(month_end)
+    prev_month_df = daily_df[
+        (daily_df['date'] >= month_start_pd) & 
+        (daily_df['date'] <= month_end_pd)
+    ]
+    
+    # Lifetime stats
+    lifetime_df = daily_df
+    
+    # Calculate stats for each period
+    current_stats = calculate_summary_stats(current_week_df) if not current_week_df.empty else create_empty_summary_stats()
+    prev_week_stats = calculate_summary_stats(prev_week_df) if not prev_week_df.empty else create_empty_summary_stats()
+    prev_month_stats = calculate_summary_stats(prev_month_df) if not prev_month_df.empty else create_empty_summary_stats()
+    lifetime_stats = calculate_summary_stats(lifetime_df)
+    
+    # Calculate comparisons
+    def calculate_comparison(current, previous):
+        if previous == 0:
+            return 0
+        return ((current - previous) / previous) * 100
+    
+    # Week vs previous week
+    import_week_change = calculate_comparison(
+        current_stats['avg_daily_import'] if isinstance(current_stats, dict) else current_stats.avg_daily_import, 
+        prev_week_stats['avg_daily_import'] if isinstance(prev_week_stats, dict) else prev_week_stats.avg_daily_import
+    )
+    export_week_change = calculate_comparison(
+        current_stats['avg_daily_export'] if isinstance(current_stats, dict) else current_stats.avg_daily_export, 
+        prev_week_stats['avg_daily_export'] if isinstance(prev_week_stats, dict) else prev_week_stats.avg_daily_export
+    )
+    
+    # Week vs previous month daily average
+    import_month_change = calculate_comparison(
+        current_stats['avg_daily_import'] if isinstance(current_stats, dict) else current_stats.avg_daily_import, 
+        prev_month_stats['avg_daily_import'] if isinstance(prev_month_stats, dict) else prev_month_stats.avg_daily_import
+    )
+    export_month_change = calculate_comparison(
+        current_stats['avg_daily_export'] if isinstance(current_stats, dict) else current_stats.avg_daily_export, 
+        prev_month_stats['avg_daily_export'] if isinstance(prev_month_stats, dict) else prev_month_stats.avg_daily_export
+    )
+    
+    # Create enhanced stats object
+    enhanced_stats = {
+        # Current week totals
+        'total_import': current_stats['total_import'] if isinstance(current_stats, dict) else current_stats.total_import,
+        'total_export': current_stats['total_export'] if isinstance(current_stats, dict) else current_stats.total_export,
+        'net_consumption': current_stats['net_consumption'] if isinstance(current_stats, dict) else current_stats.net_consumption,
+        'self_sufficiency': current_stats['self_sufficiency'] if isinstance(current_stats, dict) else current_stats.self_sufficiency,
+        'avg_daily_import': current_stats['avg_daily_import'] if isinstance(current_stats, dict) else current_stats.avg_daily_import,
+        'avg_daily_export': current_stats['avg_daily_export'] if isinstance(current_stats, dict) else current_stats.avg_daily_export,
+        
+        # Comparisons
+        'import_week_change': import_week_change,
+        'export_week_change': export_week_change,
+        'import_month_change': import_month_change,
+        'export_month_change': export_month_change,
+        
+        # Period info
+        'period_name': "Last 7 Days",
+        'period_start': week_start.strftime('%b %d'),
+        'period_end': today.strftime('%b %d'),
+        'data_days': len(current_week_df),
+        
+        # Lifetime context
+        'lifetime_total_import': lifetime_stats['total_import'] if isinstance(lifetime_stats, dict) else lifetime_stats.total_import,
+        'lifetime_total_export': lifetime_stats['total_export'] if isinstance(lifetime_stats, dict) else lifetime_stats.total_export,
+        'lifetime_avg_daily_import': lifetime_stats['avg_daily_import'] if isinstance(lifetime_stats, dict) else lifetime_stats.avg_daily_import,
+        'lifetime_avg_daily_export': lifetime_stats['avg_daily_export'] if isinstance(lifetime_stats, dict) else lifetime_stats.avg_daily_export,
+        
+        # Data availability flags
+        'has_prev_week': not prev_week_df.empty,
+        'has_prev_month': not prev_month_df.empty,
+        'has_current_data': not current_week_df.empty
+    }
+    
+    return type('SolarStats', (), enhanced_stats)()
+
+def create_empty_solar_stats():
+    """Create empty solar stats when no data is available."""
+    return type('SolarStats', (), {
+        'total_import': 0,
+        'total_export': 0,
+        'net_consumption': 0,
+        'self_sufficiency': 0,
+        'avg_daily_import': 0,
+        'avg_daily_export': 0,
+        'import_week_change': 0,
+        'export_week_change': 0,
+        'import_month_change': 0,
+        'export_month_change': 0,
+        'period_name': "No Data",
+        'period_start': "",
+        'period_end': "",
+        'data_days': 0,
+        'lifetime_total_import': 0,
+        'lifetime_total_export': 0,
+        'lifetime_avg_daily_import': 0,
+        'lifetime_avg_daily_export': 0,
+        'has_prev_week': False,
+        'has_prev_month': False,
+        'has_current_data': False
+    })()
+
+def create_empty_summary_stats():
+    """Create empty summary stats structure."""
+    return type('SummaryStats', (), {
+        'total_import': 0,
+        'total_export': 0,
+        'net_consumption': 0,
+        'self_sufficiency': 0,
+        'avg_daily_import': 0,
+        'avg_daily_export': 0
+    })()
 
 @app.route('/solar')
 def solar_dashboard():
@@ -312,13 +465,13 @@ def api_solar_summary():
         return jsonify({
             'success': True,
             'stats': {
-                'total_import': round(solar_stats.total_import, 1),
-                'total_export': round(solar_stats.total_export, 1),
-                'net_consumption': round(solar_stats.net_consumption, 1),
-                'self_sufficiency': round(solar_stats.self_sufficiency, 1),
-                'avg_daily_import': round(solar_stats.avg_daily_import, 1),
-                'avg_daily_export': round(solar_stats.avg_daily_export, 1),
-                'generation_efficiency': round((solar_stats.total_export / (solar_stats.total_import + solar_stats.total_export)) * 100 if (solar_stats.total_import + solar_stats.total_export) > 0 else 0, 1)
+                'total_import': round(solar_stats['total_import'], 1),
+                'total_export': round(solar_stats['total_export'], 1),
+                'net_consumption': round(solar_stats['net_consumption'], 1),
+                'self_sufficiency': round(solar_stats['self_sufficiency'], 1),
+                'avg_daily_import': round(solar_stats['avg_daily_import'], 1),
+                'avg_daily_export': round(solar_stats['avg_daily_export'], 1),
+                'generation_efficiency': round((solar_stats['total_export'] / (solar_stats['total_import'] + solar_stats['total_export'])) * 100 if (solar_stats['total_import'] + solar_stats['total_export']) > 0 else 0, 1)
             }
         })
         
@@ -1384,6 +1537,329 @@ def fix_chart_binary_data(chart_dict):
                     array = np.frombuffer(binary_data, dtype=dtype)
                     trace[key] = array.tolist()  # Convert to regular Python list
     return chart_dict
+
+@app.route('/api/refresh-data', methods=['POST'])
+def api_refresh_data():
+    """API endpoint for refreshing both consumption and pricing data."""
+    try:
+        data = request.get_json()
+        refresh_type = data.get('type', 'all')  # 'consumption', 'pricing', 'all', 'lifetime'
+        days_back = data.get('days', 30)  # Number of days to fetch
+        force_lifetime = data.get('lifetime', False)  # Force lifetime refresh
+        delete_existing = data.get('delete_existing', False)  # Delete existing data first
+        
+        results = {
+            'success': True,
+            'consumption': {'status': 'skipped'},
+            'pricing': {'status': 'skipped'},
+            'errors': []
+        }
+        
+        # Handle lifetime refresh
+        if refresh_type == 'lifetime' or force_lifetime:
+            try:
+                if delete_existing:
+                    delete_result = delete_consumption_data()
+                    if delete_result['status'] != 'success':
+                        results['errors'].append(f"Failed to delete existing data: {delete_result['message']}")
+                
+                consumption_result = refresh_consumption_data_lifetime()
+                results['consumption'] = consumption_result
+            except Exception as e:
+                results['consumption'] = {'status': 'error', 'message': str(e)}
+                results['errors'].append(f"Lifetime refresh failed: {str(e)}")
+        
+        # Refresh consumption data (regular)
+        elif refresh_type in ['consumption', 'all']:
+            try:
+                consumption_result = refresh_consumption_data(days_back)
+                results['consumption'] = consumption_result
+            except Exception as e:
+                results['consumption'] = {'status': 'error', 'message': str(e)}
+                results['errors'].append(f"Consumption refresh failed: {str(e)}")
+        
+        # Refresh pricing data
+        if refresh_type in ['pricing', 'all']:
+            try:
+                pricing_result = refresh_pricing_data()
+                results['pricing'] = pricing_result
+            except Exception as e:
+                results['pricing'] = {'status': 'error', 'message': str(e)}
+                results['errors'].append(f"Pricing refresh failed: {str(e)}")
+        
+        # If there were any errors but some succeeded, mark as partial success
+        if results['errors'] and (results['consumption'].get('status') == 'success' or results['pricing'].get('status') == 'success'):
+            results['success'] = 'partial'
+        elif results['errors']:
+            results['success'] = False
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+def delete_consumption_data():
+    """Safely delete existing consumption data files."""
+    import os
+    import glob
+    from datetime import datetime
+    
+    try:
+        # Files to delete (consumption data files)
+        files_to_delete = [
+            'octopus_consumption_raw.csv',
+            'octopus_consumption_daily.csv',
+            'octopus_consumption_monthly.csv'
+        ]
+        
+        # Also delete timestamped backup files
+        timestamped_files = glob.glob('octopus_consumption_*_202*.csv')
+        files_to_delete.extend(timestamped_files)
+        
+        deleted_files = []
+        for file_path in files_to_delete:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                deleted_files.append(file_path)
+        
+        return {
+            'status': 'success',
+            'message': f'Deleted {len(deleted_files)} consumption data files',
+            'deleted_files': deleted_files
+        }
+        
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Error deleting files: {str(e)}'
+        }
+
+def refresh_consumption_data_lifetime():
+    """Refresh consumption data using lifetime fetcher (all available data)."""
+    import subprocess
+    import os
+    
+    # Check for API credentials
+    api_key = os.getenv('OCTOPUS_API_KEY')
+    account_number = os.getenv('OCTOPUS_ACCOUNT_NUMBER')
+    
+    if not api_key or not account_number:
+        # Try to load from files
+        try:
+            with open('oct_api.txt', 'r') as f:
+                api_key = f.read().strip()
+            with open('account_info.txt', 'r') as f:
+                account_number = f.read().strip()
+        except FileNotFoundError:
+            return {
+                'status': 'error',
+                'message': 'API credentials not found. Please set up credentials first.'
+            }
+    
+    # Set environment variables for the subprocess
+    env = os.environ.copy()
+    env['OCTOPUS_API_KEY'] = api_key
+    env['OCTOPUS_ACCOUNT_NUMBER'] = account_number
+    # Fix Unicode encoding issues on Windows
+    env['PYTHONIOENCODING'] = 'utf-8'
+    
+    try:
+        # Check if octopus_lifetime_fetcher.py exists
+        if os.path.exists('octopus_lifetime_fetcher.py'):
+            script_name = 'octopus_lifetime_fetcher.py'
+        elif os.path.exists('octopus_energy_fetcher.py'):
+            script_name = 'octopus_energy_fetcher.py'
+        else:
+            return {
+                'status': 'error',
+                'message': 'No consumption data fetcher script found. Please ensure octopus_lifetime_fetcher.py exists.'
+            }
+        
+        # Run the fetcher script with --lifetime flag
+        cmd = ['python', script_name, '--lifetime']
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=1800, encoding='utf-8', errors='replace')  # 30 minute timeout for lifetime
+        
+        if result.returncode == 0:
+            # Check if the expected files were created
+            files_created = []
+            if os.path.exists('octopus_consumption_raw.csv'):
+                files_created.append('octopus_consumption_raw.csv')
+            if os.path.exists('octopus_consumption_daily.csv'):
+                files_created.append('octopus_consumption_daily.csv')
+            
+            return {
+                'status': 'success',
+                'message': 'Successfully fetched lifetime consumption data',
+                'files_created': files_created,
+                'details': result.stdout
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Lifetime fetcher script failed: {result.stderr}',
+                'details': result.stdout
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            'status': 'error',
+            'message': 'Lifetime data fetch timed out after 30 minutes. This may happen with very large datasets.'
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Unexpected error: {str(e)}'
+        }
+
+@app.route('/api/delete-consumption-data', methods=['POST'])
+def api_delete_consumption_data():
+    """API endpoint to delete existing consumption data files."""
+    try:
+        result = delete_consumption_data()
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+def refresh_consumption_data(days_back=30):
+    """Refresh consumption data using the existing API fetcher."""
+    import subprocess
+    import os
+    from datetime import datetime, timedelta
+    
+    # Check for API credentials
+    api_key = os.getenv('OCTOPUS_API_KEY')
+    account_number = os.getenv('OCTOPUS_ACCOUNT_NUMBER')
+    
+    if not api_key or not account_number:
+        # Try to load from oct_api.txt and account_info.txt
+        try:
+            with open('oct_api.txt', 'r') as f:
+                api_key = f.read().strip()
+            with open('account_info.txt', 'r') as f:
+                account_number = f.read().strip()
+        except FileNotFoundError:
+            return {
+                'status': 'error',
+                'message': 'API credentials not found. Please set OCTOPUS_API_KEY and OCTOPUS_ACCOUNT_NUMBER environment variables or create oct_api.txt and account_info.txt files.'
+            }
+    
+    # Set environment variables for the subprocess
+    env = os.environ.copy()
+    env['OCTOPUS_API_KEY'] = api_key
+    env['OCTOPUS_ACCOUNT_NUMBER'] = account_number
+    # Fix Unicode encoding issues on Windows
+    env['PYTHONIOENCODING'] = 'utf-8'
+    
+    try:
+        # Check if octopus_lifetime_fetcher.py exists
+        if os.path.exists('octopus_lifetime_fetcher.py'):
+            script_name = 'octopus_lifetime_fetcher.py'
+        elif os.path.exists('octopus_energy_fetcher.py'):
+            script_name = 'octopus_energy_fetcher.py'
+        else:
+            return {
+                'status': 'error',
+                'message': 'No consumption data fetcher script found. Please ensure octopus_lifetime_fetcher.py or octopus_energy_fetcher.py exists.'
+            }
+        
+        # Run the fetcher script
+        cmd = ['python', script_name, '--days', str(days_back)]
+        result = subprocess.run(cmd, env=env, capture_output=True, text=True, timeout=300, encoding='utf-8', errors='replace')
+        
+        if result.returncode == 0:
+            # Check if the expected files were created
+            files_created = []
+            if os.path.exists('octopus_consumption_raw.csv'):
+                files_created.append('octopus_consumption_raw.csv')
+            if os.path.exists('octopus_consumption_daily.csv'):
+                files_created.append('octopus_consumption_daily.csv')
+            
+            return {
+                'status': 'success',
+                'message': f'Successfully fetched {days_back} days of consumption data',
+                'files_created': files_created,
+                'details': result.stdout
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Fetcher script failed: {result.stderr}',
+                'details': result.stdout
+            }
+            
+    except subprocess.TimeoutExpired:
+        return {
+            'status': 'error',
+            'message': f'Data fetch timed out after 5 minutes. Try fetching fewer days.'
+        }
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Unexpected error: {str(e)}'
+        }
+
+def refresh_pricing_data():
+    """Refresh pricing data using the existing tariff refresh functionality."""
+    if not TARIFF_AVAILABLE:
+        return {
+            'status': 'error',
+            'message': 'Tariff tracker not available'
+        }
+    
+    try:
+        # Use the existing tariff refresh functionality
+        mgr = get_manager()
+        if not mgr:
+            return {
+                'status': 'error',
+                'message': 'Could not initialize tariff manager'
+            }
+        
+        # Refresh all tariff periods
+        refresh_results = []
+        
+        # Get all import periods and refresh them
+        import_periods = mgr.get_import_periods()
+        for period in import_periods:
+            try:
+                mgr.refresh_period_rates(period.id)
+                refresh_results.append(f"Refreshed import period: {period.tariff_code}")
+            except Exception as e:
+                refresh_results.append(f"Failed to refresh import period {period.tariff_code}: {str(e)}")
+        
+        # Get all export periods and refresh them
+        export_periods = mgr.get_export_periods()
+        for period in export_periods:
+            try:
+                mgr.refresh_period_rates(period.id)
+                refresh_results.append(f"Refreshed export period: {period.tariff_code}")
+            except Exception as e:
+                refresh_results.append(f"Failed to refresh export period {period.tariff_code}: {str(e)}")
+        
+        # Regenerate pricing data CSV if we have the script
+        if os.path.exists('generate_pricing_data.py'):
+            try:
+                import subprocess
+                result = subprocess.run(['python', 'generate_pricing_data.py'], 
+                                      capture_output=True, text=True, timeout=60)
+                if result.returncode == 0:
+                    refresh_results.append("Regenerated pricing_raw.csv successfully")
+                else:
+                    refresh_results.append(f"Failed to regenerate pricing_raw.csv: {result.stderr}")
+            except Exception as e:
+                refresh_results.append(f"Failed to regenerate pricing data: {str(e)}")
+        
+        return {
+            'status': 'success',
+            'message': 'Pricing data refresh completed',
+            'details': refresh_results
+        }
+        
+    except Exception as e:
+        return {
+            'status': 'error',
+            'message': f'Pricing refresh failed: {str(e)}'
+        }
 
 if __name__ == '__main__':
     print("🐙 Starting Unified Octopus Energy Dashboard...")

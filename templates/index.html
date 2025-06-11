@@ -14,6 +14,114 @@
     </div>
 </div>
 
+<!-- Data Refresh Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-sync-alt me-2"></i>
+                    Data Refresh Center
+                </h5>
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">
+                    Fetch the latest data from Octopus Energy API to keep your dashboard up-to-date.
+                </p>
+                
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card h-100 border-primary">
+                            <div class="card-body text-center">
+                                <i class="fas fa-bolt text-primary fa-2x mb-3"></i>
+                                <h6>Consumption Data</h6>
+                                <p class="small text-muted">Update solar generation and energy usage data</p>
+                                <div class="mb-3">
+                                    <select class="form-select form-select-sm" id="consumption-days">
+                                        <option value="7">Last 7 days</option>
+                                        <option value="30" selected>Last 30 days</option>
+                                        <option value="90">Last 90 days</option>
+                                        <option value="365">Last year</option>
+                                    </select>
+                                </div>
+                                <button class="btn btn-primary btn-sm" onclick="refreshData('consumption')">
+                                    <i class="fas fa-download me-1"></i>Refresh Consumption
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <div class="card h-100 border-info">
+                            <div class="card-body text-center">
+                                <i class="fas fa-tags text-info fa-2x mb-3"></i>
+                                <h6>Pricing Data</h6>
+                                <p class="small text-muted">Update tariff rates and pricing information</p>
+                                <div class="mb-3">
+                                    <small class="text-muted">Updates all configured tariff periods</small>
+                                </div>
+                                <button class="btn btn-info btn-sm" onclick="refreshData('pricing')" {% if not tariff_available %}disabled{% endif %}>
+                                    <i class="fas fa-pound-sign me-1"></i>Refresh Pricing
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <div class="card h-100 border-success">
+                            <div class="card-body text-center">
+                                <i class="fas fa-database text-success fa-2x mb-3"></i>
+                                <h6>Complete Refresh</h6>
+                                <p class="small text-muted">Update both consumption and pricing data</p>
+                                <div class="mb-3">
+                                    <small class="text-muted">Recommended for daily updates</small>
+                                </div>
+                                <button class="btn btn-success btn-sm" onclick="refreshData('all')">
+                                    <i class="fas fa-sync-alt me-1"></i>Refresh All Data
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-3">
+                        <div class="card h-100 border-warning">
+                            <div class="card-body text-center">
+                                <i class="fas fa-history text-warning fa-2x mb-3"></i>
+                                <h6>Lifetime Refresh</h6>
+                                <p class="small text-muted">Get complete historical data (15-30 min)</p>
+                                <div class="form-check mb-2" style="font-size: 0.8rem;">
+                                    <input class="form-check-input" type="checkbox" id="delete-existing">
+                                    <label class="form-check-label" for="delete-existing">
+                                        Delete existing data first
+                                    </label>
+                                </div>
+                                <button class="btn btn-warning btn-sm" onclick="refreshLifetime()">
+                                    <i class="fas fa-exclamation-triangle me-1"></i>Lifetime Refresh
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Refresh Status -->
+                <div id="refresh-status" class="mt-3" style="display: none;">
+                    <div class="alert" id="refresh-alert">
+                        <div class="d-flex align-items-center">
+                            <div class="spinner-border spinner-border-sm me-2" id="refresh-spinner" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <div id="refresh-message">Starting data refresh...</div>
+                        </div>
+                        <div class="progress mt-2" style="height: 4px;">
+                            <div class="progress-bar progress-bar-striped progress-bar-animated" id="refresh-progress" role="progressbar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Status Cards -->
 <div class="row mb-4">
     <div class="col-md-6">
@@ -52,7 +160,8 @@
 <!-- Solar Energy Overview -->
 <div class="row mb-4">
     <div class="col-12">
-        <h3><i class="fas fa-solar-panel me-2 text-warning"></i>Solar Energy Overview</h3>
+        <h3><i class="fas fa-solar-panel me-2 text-warning"></i>Solar Energy Overview - {{ solar_stats.period_name }}</h3>
+        <p class="text-muted">{{ solar_stats.period_start }} to {{ solar_stats.period_end }} ({{ solar_stats.data_days }} days of data)</p>
     </div>
 </div>
 
@@ -60,27 +169,72 @@
     <div class="col-md-3">
         <div class="card bg-danger text-white">
             <div class="card-body text-center">
-                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_import) }}</h4>
-                <p class="metric-label mb-1">Total Grid Import (kWh)</p>
-                <small>Avg: {{ "%.1f"|format(solar_stats.avg_daily_import) }} kWh/day</small>
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_import) }} kWh</h4>
+                <p class="metric-label mb-1">Weekly Grid Import</p>
+                <small>{{ "%.1f"|format(solar_stats.avg_daily_import) }} kWh/day avg</small>
+                {% if solar_stats.has_prev_week %}
+                <div class="mt-1">
+                    {% if solar_stats.import_week_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-up"></i> +{{ "%.1f"|format(solar_stats.import_week_change) }}% vs last week
+                        </small>
+                    {% elif solar_stats.import_week_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-down"></i> {{ "%.1f"|format(solar_stats.import_week_change) }}% vs last week
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last week</small>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card bg-success text-white">
             <div class="card-body text-center">
-                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_export) }}</h4>
-                <p class="metric-label mb-1">Total Solar Export (kWh)</p>
-                <small>Avg: {{ "%.1f"|format(solar_stats.avg_daily_export) }} kWh/day</small>
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_export) }} kWh</h4>
+                <p class="metric-label mb-1">Weekly Solar Export</p>
+                <small>{{ "%.1f"|format(solar_stats.avg_daily_export) }} kWh/day avg</small>
+                {% if solar_stats.has_prev_week %}
+                <div class="mt-1">
+                    {% if solar_stats.export_week_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-up"></i> +{{ "%.1f"|format(solar_stats.export_week_change) }}% vs last week
+                        </small>
+                    {% elif solar_stats.export_week_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-down"></i> {{ "%.1f"|format(solar_stats.export_week_change) }}% vs last week
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last week</small>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
     <div class="col-md-3">
         <div class="card bg-primary text-white">
             <div class="card-body text-center">
-                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.net_consumption) }}</h4>
-                <p class="metric-label mb-1">Net Consumption (kWh)</p>
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.net_consumption) }} kWh</h4>
+                <p class="metric-label mb-1">Net Consumption</p>
                 <small>Import - Export</small>
+                {% if solar_stats.has_prev_month %}
+                <div class="mt-1">
+                    {% if solar_stats.import_month_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-calendar"></i> +{{ "%.1f"|format(solar_stats.import_month_change) }}% vs last month
+                        </small>
+                    {% elif solar_stats.import_month_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-calendar"></i> {{ "%.1f"|format(solar_stats.import_month_change) }}% vs last month
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last month</small>
+                    {% endif %}
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -90,6 +244,52 @@
                 <h4 class="metric-value">{{ "%.1f"|format(solar_stats.self_sufficiency) }}%</h4>
                 <p class="metric-label mb-1">Self Sufficiency</p>
                 <small>Export/Import ratio</small>
+                <div class="mt-1">
+                    <small class="badge bg-light text-dark">
+                        <i class="fas fa-chart-line"></i> Lifetime: {{ "%.1f"|format((solar_stats.lifetime_total_export / solar_stats.lifetime_total_import * 100) if solar_stats.lifetime_total_import > 0 else 0) }}%
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Weekly vs Lifetime Comparison -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title"><i class="fas fa-chart-bar me-2"></i>Performance Context</h6>
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Daily Import</small>
+                            <strong class="text-danger">{{ "%.1f"|format(solar_stats.avg_daily_import) }} kWh</strong>
+                            <small class="text-muted">vs {{ "%.1f"|format(solar_stats.lifetime_avg_daily_import) }} kWh lifetime avg</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Daily Export</small>
+                            <strong class="text-success">{{ "%.1f"|format(solar_stats.avg_daily_export) }} kWh</strong>
+                            <small class="text-muted">vs {{ "%.1f"|format(solar_stats.lifetime_avg_daily_export) }} kWh lifetime avg</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Lifetime Total Import</small>
+                            <strong class="text-primary">{{ "%.0f"|format(solar_stats.lifetime_total_import) }} kWh</strong>
+                            <small class="text-muted">since data began</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Lifetime Total Export</small>
+                            <strong class="text-warning">{{ "%.0f"|format(solar_stats.lifetime_total_export) }} kWh</strong>
+                            <small class="text-muted">since data began</small>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
@@ -317,5 +517,455 @@
 <script>
     // Update the dashboard timestamp
     document.getElementById('dashboard-updated').textContent = new Date().toLocaleString();
+    
+    let refreshInProgress = false;
+    
+    // Main data refresh function
+    function refreshData(type) {
+        if (refreshInProgress) {
+            return;
+        }
+        
+        refreshInProgress = true;
+        const days = type === 'consumption' ? document.getElementById('consumption-days').value : 30;
+        
+        // Show refresh status
+        showRefreshStatus(type);
+        
+        // Disable all refresh buttons
+        const buttons = document.querySelectorAll('[onclick^="refreshData"]');
+        buttons.forEach(btn => {
+            btn.disabled = true;
+            btn.innerHTML = btn.innerHTML.replace(/fas fa-\w+/, 'fas fa-spinner fa-spin');
+        });
+        
+        const data = {
+            type: type,
+            days: parseInt(days)
+        };
+        
+        fetch('/api/refresh-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(result => {
+            handleRefreshResult(result, type);
+        })
+        .catch(error => {
+            console.error('Refresh error:', error);
+            showRefreshError('Network error occurred while refreshing data');
+        })
+        .finally(() => {
+            refreshInProgress = false;
+            // Re-enable buttons and restore icons
+            restoreButtons();
+        });
+    }
+    
+    // Lifetime refresh function  
+    function refreshLifetime() {
+        if (refreshInProgress) {
+            return;
+        }
+        
+        const deleteExisting = document.getElementById('delete-existing').checked;
+        
+        // Show confirmation dialog due to the destructive nature and long duration
+        const confirmMessage = deleteExisting 
+            ? '⚠️ WARNING: This will DELETE all existing consumption data and fetch your complete historical dataset from scratch.\n\n' +
+              'This process can take 15-30 minutes and will:\n' +
+              '• Delete all current consumption files\n' +
+              '• Download your entire consumption history\n' +
+              '• May time out for very large datasets\n\n' +
+              'Are you sure you want to continue?'
+            : '⚠️ This will fetch your complete historical consumption dataset from the Octopus Energy API.\n\n' +
+              'This process can take 15-30 minutes depending on how much data you have.\n' +
+              'Your existing data will be updated, not deleted.\n\n' +
+              'Are you sure you want to continue?';
+              
+        if (!confirm(confirmMessage)) {
+            return;
+        }
+        
+        refreshInProgress = true;
+        
+        // Show special status for lifetime refresh
+        showLifetimeRefreshStatus(deleteExisting);
+        
+        // Disable all refresh buttons
+        const buttons = document.querySelectorAll('[onclick^="refreshData"], [onclick^="refreshLifetime"]');
+        buttons.forEach(btn => {
+            btn.disabled = true;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+        });
+        
+        // Make API call
+        fetch('/api/refresh-data', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                type: 'lifetime',
+                delete_existing: deleteExisting
+            })
+        })
+        .then(response => response.json())
+        .then(result => {
+            handleLifetimeRefreshResult(result, deleteExisting);
+        })
+        .catch(error => {
+            showRefreshError('Network error occurred during lifetime refresh: ' + error.message);
+        })
+        .finally(() => {
+            refreshInProgress = false;
+            restoreButtons();
+        });
+    }
+    
+    function showLifetimeRefreshStatus(deleteExisting) {
+        const statusDiv = document.getElementById('refresh-status');
+        const alertDiv = document.getElementById('refresh-alert');
+        const messageDiv = document.getElementById('refresh-message');
+        const progressBar = document.getElementById('refresh-progress');
+        const spinner = document.getElementById('refresh-spinner');
+        
+        statusDiv.style.display = 'block';
+        alertDiv.className = 'alert alert-warning';
+        spinner.style.display = 'inline-block';
+        progressBar.style.width = '5%';
+        progressBar.className = 'progress-bar progress-bar-striped progress-bar-animated bg-warning';
+        
+        const initialMessage = deleteExisting 
+            ? '🔥 Deleting existing data and starting lifetime refresh...'
+            : '📚 Starting lifetime consumption data refresh...';
+        messageDiv.innerHTML = `<i class="fas fa-clock me-2"></i>${initialMessage}<br><small class="text-muted">This may take 15-30 minutes. Please don't close this page.</small>`;
+        
+        // Slower progress for lifetime refresh (since it takes much longer)
+        let progress = 5;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 3; // Much slower progress
+            if (progress > 85) progress = 85; // Don't go past 85% until we get results
+            progressBar.style.width = progress + '%';
+            
+            // Update message occasionally
+            if (progress > 20 && progress < 25) {
+                messageDiv.innerHTML = `<i class="fas fa-download me-2"></i>Fetching historical data from Octopus Energy API...<br><small class="text-muted">This is a large dataset, please be patient.</small>`;
+            } else if (progress > 50 && progress < 55) {
+                messageDiv.innerHTML = `<i class="fas fa-cog me-2"></i>Processing and organizing consumption data...<br><small class="text-muted">Almost there! Processing large amounts of data.</small>`;
+            }
+        }, 2000); // Update every 2 seconds instead of 1
+        
+        // Store interval for cleanup
+        statusDiv.dataset.progressInterval = progressInterval;
+    }
+    
+    function handleLifetimeRefreshResult(result, deleteExisting) {
+        const statusDiv = document.getElementById('refresh-status');
+        const alertDiv = document.getElementById('refresh-alert');
+        const messageDiv = document.getElementById('refresh-message');
+        const progressBar = document.getElementById('refresh-progress');
+        const spinner = document.getElementById('refresh-spinner');
+        
+        // Clear progress interval
+        const progressInterval = statusDiv.dataset.progressInterval;
+        if (progressInterval) {
+            clearInterval(parseInt(progressInterval));
+        }
+        
+        progressBar.style.width = '100%';
+        spinner.style.display = 'none';
+        
+        if (result.success === true) {
+            // Success
+            alertDiv.className = 'alert alert-success';
+            messageDiv.innerHTML = `
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Lifetime Refresh Complete!</strong> Successfully ${deleteExisting ? 'deleted old data and ' : ''}fetched your complete consumption history.
+                ${getLifetimeSuccessDetails(result)}
+            `;
+            
+            // Auto-reload page after 5 seconds to show new data
+            setTimeout(() => {
+                showRefreshMessage('Reloading dashboard with complete historical data...');
+                window.location.reload();
+            }, 5000);
+            
+        } else {
+            // Failure
+            alertDiv.className = 'alert alert-danger';
+            messageDiv.innerHTML = `
+                <i class="fas fa-times-circle me-2"></i>
+                <strong>Lifetime Refresh Failed:</strong> ${result.error || 'Unknown error occurred'}
+                ${getLifetimeErrorDetails(result)}
+            `;
+        }
+        
+        // Hide status after 30 seconds for success, 60 seconds for error (longer due to importance)
+        const hideDelay = result.success === true ? 30000 : 60000;
+        setTimeout(() => {
+            statusDiv.style.display = 'none';
+        }, hideDelay);
+    }
+    
+    function getLifetimeSuccessDetails(result) {
+        let details = '<div class="mt-2 small">';
+        
+        if (result.consumption && result.consumption.status === 'success') {
+            details += `<div><i class="fas fa-database text-success"></i> ${result.consumption.message}</div>`;
+            if (result.consumption.files_created && result.consumption.files_created.length > 0) {
+                details += `<div class="text-muted">Files created: ${result.consumption.files_created.join(', ')}</div>`;
+            }
+            if (result.consumption.details) {
+                // Try to extract record count from details
+                const recordMatch = result.consumption.details.match(/(\d+)\s+records/);
+                if (recordMatch) {
+                    details += `<div class="text-success">📊 Downloaded ${recordMatch[1]} consumption records</div>`;
+                }
+            }
+        }
+        
+        details += '<div class="mt-2 text-info">💡 Your dashboard now shows your complete consumption history!</div>';
+        details += '</div>';
+        return details;
+    }
+    
+    function getLifetimeErrorDetails(result) {
+        let details = '<div class="mt-2 small">';
+        
+        if (result.consumption && result.consumption.status === 'error') {
+            details += `<div><i class="fas fa-exclamation-triangle text-danger"></i> ${result.consumption.message}</div>`;
+        }
+        
+        if (result.errors && result.errors.length > 0) {
+            result.errors.forEach(error => {
+                details += `<div class="text-danger">• ${error}</div>`;
+            });
+        }
+        
+        details += '<div class="mt-2 text-muted">💡 <strong>Common causes:</strong> API timeout (try again later), network issues, or very large datasets.</div>';
+        details += '<div class="text-muted">If this keeps failing, try the regular refresh options instead.</div>';
+        details += '</div>';
+        return details;
+    }
+    
+    function showRefreshStatus(type) {
+        const statusDiv = document.getElementById('refresh-status');
+        const alertDiv = document.getElementById('refresh-alert');
+        const messageDiv = document.getElementById('refresh-message');
+        const progressBar = document.getElementById('refresh-progress');
+        
+        statusDiv.style.display = 'block';
+        alertDiv.className = 'alert alert-info';
+        messageDiv.textContent = getRefreshMessage(type);
+        progressBar.style.width = '10%';
+        
+        // Simulate progress
+        let progress = 10;
+        const progressInterval = setInterval(() => {
+            progress += Math.random() * 20;
+            if (progress > 90) progress = 90;
+            progressBar.style.width = progress + '%';
+        }, 1000);
+        
+        // Store interval for cleanup
+        statusDiv.dataset.progressInterval = progressInterval;
+    }
+    
+    function getRefreshMessage(type) {
+        switch(type) {
+            case 'consumption':
+                return 'Fetching latest consumption data from Octopus Energy API...';
+            case 'pricing':
+                return 'Updating tariff rates and pricing information...';
+            case 'all':
+                return 'Refreshing both consumption and pricing data...';
+            default:
+                return 'Processing data refresh...';
+        }
+    }
+    
+    function handleRefreshResult(result, type) {
+        const statusDiv = document.getElementById('refresh-status');
+        const alertDiv = document.getElementById('refresh-alert');
+        const messageDiv = document.getElementById('refresh-message');
+        const progressBar = document.getElementById('refresh-progress');
+        const spinner = document.getElementById('refresh-spinner');
+        
+        // Clear progress interval
+        const progressInterval = statusDiv.dataset.progressInterval;
+        if (progressInterval) {
+            clearInterval(parseInt(progressInterval));
+        }
+        
+        progressBar.style.width = '100%';
+        spinner.style.display = 'none';
+        
+        if (result.success === true) {
+            // Full success
+            alertDiv.className = 'alert alert-success';
+            messageDiv.innerHTML = `
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Success!</strong> Data refresh completed successfully.
+                ${getSuccessDetails(result, type)}
+            `;
+            
+            // Auto-reload page after 3 seconds to show new data
+            setTimeout(() => {
+                showRefreshMessage('Reloading dashboard with updated data...');
+                window.location.reload();
+            }, 3000);
+            
+        } else if (result.success === 'partial') {
+            // Partial success
+            alertDiv.className = 'alert alert-warning';
+            messageDiv.innerHTML = `
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Partial Success:</strong> Some data was updated, but there were issues.
+                ${getPartialDetails(result, type)}
+            `;
+            
+        } else {
+            // Failure
+            alertDiv.className = 'alert alert-danger';
+            messageDiv.innerHTML = `
+                <i class="fas fa-times-circle me-2"></i>
+                <strong>Error:</strong> ${result.error || 'Data refresh failed'}
+                ${getErrorDetails(result, type)}
+            `;
+        }
+        
+        // Hide status after 10 seconds if successful, 30 seconds if error
+        const hideDelay = result.success === true ? 10000 : 30000;
+        setTimeout(() => {
+            statusDiv.style.display = 'none';
+        }, hideDelay);
+    }
+    
+    function getSuccessDetails(result, type) {
+        let details = '<div class="mt-2 small">';
+        
+        if (result.consumption && result.consumption.status === 'success') {
+            details += `<div><i class="fas fa-bolt text-success"></i> ${result.consumption.message}</div>`;
+            if (result.consumption.files_created) {
+                details += `<div class="text-muted">Files updated: ${result.consumption.files_created.join(', ')}</div>`;
+            }
+        }
+        
+        if (result.pricing && result.pricing.status === 'success') {
+            details += `<div><i class="fas fa-tags text-success"></i> ${result.pricing.message}</div>`;
+        }
+        
+        details += '</div>';
+        return details;
+    }
+    
+    function getPartialDetails(result, type) {
+        let details = '<div class="mt-2 small">';
+        
+        if (result.consumption) {
+            const icon = result.consumption.status === 'success' ? 'check-circle text-success' : 'times-circle text-danger';
+            details += `<div><i class="fas fa-${icon}"></i> Consumption: ${result.consumption.message || result.consumption.status}</div>`;
+        }
+        
+        if (result.pricing) {
+            const icon = result.pricing.status === 'success' ? 'check-circle text-success' : 'times-circle text-danger';
+            details += `<div><i class="fas fa-${icon}"></i> Pricing: ${result.pricing.message || result.pricing.status}</div>`;
+        }
+        
+        if (result.errors && result.errors.length > 0) {
+            details += '<div class="mt-1"><strong>Errors:</strong></div>';
+            result.errors.forEach(error => {
+                details += `<div class="text-danger">• ${error}</div>`;
+            });
+        }
+        
+        details += '</div>';
+        return details;
+    }
+    
+    function getErrorDetails(result, type) {
+        let details = '<div class="mt-2 small">';
+        
+        if (result.consumption && result.consumption.status === 'error') {
+            details += `<div><i class="fas fa-bolt text-danger"></i> Consumption error: ${result.consumption.message}</div>`;
+        }
+        
+        if (result.pricing && result.pricing.status === 'error') {
+            details += `<div><i class="fas fa-tags text-danger"></i> Pricing error: ${result.pricing.message}</div>`;
+        }
+        
+        if (result.errors && result.errors.length > 0) {
+            result.errors.forEach(error => {
+                details += `<div class="text-danger">• ${error}</div>`;
+            });
+        }
+        
+        details += '<div class="mt-2 text-muted">💡 <strong>Tip:</strong> Check your API credentials and internet connection.</div>';
+        details += '</div>';
+        return details;
+    }
+    
+    function showRefreshError(message) {
+        const statusDiv = document.getElementById('refresh-status');
+        const alertDiv = document.getElementById('refresh-alert');
+        const messageDiv = document.getElementById('refresh-message');
+        const progressBar = document.getElementById('refresh-progress');
+        const spinner = document.getElementById('refresh-spinner');
+        
+        statusDiv.style.display = 'block';
+        alertDiv.className = 'alert alert-danger';
+        spinner.style.display = 'none';
+        progressBar.style.width = '100%';
+        progressBar.className = progressBar.className.replace('progress-bar-animated', '');
+        
+        messageDiv.innerHTML = `
+            <i class="fas fa-times-circle me-2"></i>
+            <strong>Error:</strong> ${message}
+        `;
+        
+        // Hide after 15 seconds
+        setTimeout(() => {
+            statusDiv.style.display = 'none';
+        }, 15000);
+    }
+    
+    function showRefreshMessage(message) {
+        const messageDiv = document.getElementById('refresh-message');
+        messageDiv.innerHTML = `<i class="fas fa-info-circle me-2"></i>${message}`;
+    }
+    
+    function restoreButtons() {
+        const buttons = document.querySelectorAll('[onclick^="refreshData"], [onclick^="refreshLifetime"]');
+        buttons.forEach(btn => {
+            btn.disabled = false;
+            
+            // Restore original icons
+            if (btn.textContent.includes('Refresh Consumption')) {
+                btn.innerHTML = '<i class="fas fa-download me-1"></i>Refresh Consumption';
+            } else if (btn.textContent.includes('Refresh Pricing')) {
+                btn.innerHTML = '<i class="fas fa-pound-sign me-1"></i>Refresh Pricing';
+            } else if (btn.textContent.includes('Refresh All Data')) {
+                btn.innerHTML = '<i class="fas fa-sync-alt me-1"></i>Refresh All Data';
+            } else if (btn.textContent.includes('Lifetime Refresh')) {
+                btn.innerHTML = '<i class="fas fa-exclamation-triangle me-1"></i>Lifetime Refresh';
+            }
+        });
+    }
+    
+    // Add tooltips for better UX
+    document.addEventListener('DOMContentLoaded', function() {
+        // Initialize Bootstrap tooltips if available
+        if (typeof bootstrap !== 'undefined' && bootstrap.Tooltip) {
+            const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+            tooltipTriggerList.map(function (tooltipTriggerEl) {
+                return new bootstrap.Tooltip(tooltipTriggerEl);
+            });
+        }
+    });
 </script>
 {% endblock %} 
