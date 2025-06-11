@@ -1,0 +1,112 @@
+{% extends "base.html" %}
+
+{% block title %}Rate Lookup - Unified Octopus Energy{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold text-info">
+            <i class="fas fa-search me-3"></i>
+            Rate Lookup
+        </h1>
+        <p class="lead text-muted">Look up electricity rates for specific dates and times</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form id="rate-lookup-form">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="datetime" class="form-label">Date & Time</label>
+                            <input type="datetime-local" class="form-control" id="datetime" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="flow_direction" class="form-label">Flow Direction</label>
+                            <select class="form-select" id="flow_direction" required>
+                                <option value="import">Import</option>
+                                <option value="export">Export</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="fas fa-search me-1"></i>Lookup Rate
+                    </button>
+                </form>
+                
+                <div id="result" class="card mt-4" style="display: none;">
+                    <div class="card-body" id="resultContent">
+                        <!-- Results will be populated by JavaScript -->
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+document.getElementById('rate-lookup-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const datetime = document.getElementById('datetime').value;
+    const flowDirection = document.getElementById('flow_direction').value;
+    
+    fetch('/api/rate-lookup', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            datetime: datetime,
+            flow_direction: flowDirection
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        const resultDiv = document.getElementById('result');
+        const contentDiv = document.getElementById('resultContent');
+        
+        if (data.success) {
+            const rate = data.rate;
+            let rateDisplay = '';
+            
+            if (rate.is_export) {
+                rateDisplay = `<p><strong>Rate:</strong> ${rate.value}p/kWh (exc VAT)</p>`;
+            } else {
+                rateDisplay = `
+                    <p><strong>Rate (inc VAT):</strong> ${rate.value_inc_vat}p/kWh</p>
+                    <p><strong>Rate (exc VAT):</strong> ${rate.value_exc_vat}p/kWh</p>
+                `;
+            }
+            
+            contentDiv.innerHTML = `
+                <h5>Rate Found</h5>
+                ${rateDisplay}
+                <p><strong>Valid From:</strong> ${new Date(rate.valid_from).toLocaleString()}</p>
+                <p><strong>Valid To:</strong> ${rate.valid_to ? new Date(rate.valid_to).toLocaleString() : 'Ongoing'}</p>
+                <p><strong>Rate Type:</strong> ${rate.rate_type}</p>
+            `;
+            resultDiv.className = 'card border-success mt-4';
+        } else {
+            contentDiv.innerHTML = `<p class="text-danger">${data.message}</p>`;
+            resultDiv.className = 'card border-danger mt-4';
+        }
+        
+        resultDiv.style.display = 'block';
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        const resultDiv = document.getElementById('result');
+        const contentDiv = document.getElementById('resultContent');
+        contentDiv.innerHTML = '<p class="text-danger">Error performing lookup</p>';
+        resultDiv.className = 'card border-danger mt-4';
+        resultDiv.style.display = 'block';
+    });
+});
+</script>
+{% endblock %} 

@@ -1,0 +1,344 @@
+{% extends "base.html" %}
+
+{% block title %}Solar Dashboard - Unified Octopus Energy{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold text-warning">
+            <i class="fas fa-solar-panel me-3"></i>
+            Solar Energy Dashboard
+        </h1>
+        <p class="lead text-muted">Analyze your solar energy generation and consumption patterns</p>
+    </div>
+</div>
+
+{% if data_available %}
+<!-- Solar Statistics Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-danger text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_import) }}</h4>
+                <p class="metric-label mb-1">Total Grid Import</p>
+                <small>{{ "%.1f"|format(solar_stats.avg_daily_import) }} kWh/day avg</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.total_export) }}</h4>
+                <p class="metric-label mb-1">Total Solar Export</p>
+                <small>{{ "%.1f"|format(solar_stats.avg_daily_export) }} kWh/day avg</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.net_consumption) }}</h4>
+                <p class="metric-label mb-1">Net Consumption</p>
+                <small>Import - Export</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ "%.1f"|format(solar_stats.self_sufficiency) }}%</h4>
+                <p class="metric-label mb-1">Self Sufficiency</p>
+                <small>Export/Import ratio</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Controls -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="fas fa-sliders-h me-2"></i>Chart Controls</h6>
+            </div>
+            <div class="card-body">
+                <form id="chart-controls">
+                    <!-- Quick Date Range Buttons -->
+                    <div class="row mb-3">
+                        <div class="col-12">
+                            <label class="form-label fw-bold">Quick Select:</label>
+                            <div class="btn-group" role="group">
+                                <button type="button" class="btn btn-primary btn-sm" onclick="setQuickRange('lifetime')">
+                                    Lifetime
+                                </button>
+                                <button type="button" class="btn btn-success btn-sm" onclick="setQuickRange('export-start')">
+                                    Since Export
+                                </button>
+                                <button type="button" class="btn btn-info btn-sm" onclick="setQuickRange('move-in')">
+                                    Since Move-in
+                                </button>
+                                <button type="button" class="btn btn-secondary btn-sm" onclick="setQuickRange('last30')">
+                                    Last 30 Days
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-3">
+                            <label for="chart-type" class="form-label">Chart Type</label>
+                            <select class="form-select" id="chart-type" name="chart_type">
+                                <option value="daily_overview" selected>Daily Overview</option>
+                                <option value="hourly_analysis">Hourly Analysis</option>
+                                <option value="net_flow">Net Energy Flow</option>
+                                <option value="energy_balance">Energy Balance</option>
+                                <option value="consumption_pattern">Consumption Pattern</option>
+                            </select>
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Chart Options</label>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="show-temperature" name="options" value="show_temperature">
+                                <label class="form-check-label" for="show-temperature">
+                                    <small>Show Temperature</small>
+                                </label>
+                            </div>
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" id="use-rolling-avg" name="options" value="use_rolling_avg" checked>
+                                <label class="form-check-label" for="use-rolling-avg">
+                                    <small>Rolling Averages (>30 days)</small>
+                                </label>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Custom Date Range</label>
+                            <div class="row g-2">
+                                <div class="col">
+                                    <input type="date" class="form-control form-control-sm" id="start-date" name="start_date" placeholder="Start Date">
+                                </div>
+                                <div class="col">
+                                    <input type="date" class="form-control form-control-sm" id="end-date" name="end_date" placeholder="End Date">
+                                </div>
+                            </div>
+                            <small class="text-muted" id="data-range-info">
+                                {% if data_min_date and data_max_date %}
+                                📅 Data available: {{ data_min_date }} to {{ data_max_date }}
+                                {% else %}
+                                📅 Data available: No data
+                                {% endif %}
+                            </small>
+                        </div>
+                    </div>
+                    <div class="row mt-3">
+                        <div class="col-12">
+                            <button type="button" class="btn btn-primary me-2" onclick="updateChart()">
+                                <i class="fas fa-chart-line me-1"></i>Update Chart
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Chart Container -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="fas fa-chart-area me-2"></i>Energy Analysis Chart</h6>
+            </div>
+            <div class="card-body p-0">
+                <div id="chart-container" class="chart-container">
+                    {% if chart_json %}
+                        <div id="solar-chart"></div>
+                    {% else %}
+                        <div class="alert alert-info m-3">
+                            <i class="fas fa-info-circle me-2"></i>
+                            Select chart options and click "Update Chart" to view your solar energy data.
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Statistics -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="fas fa-lightbulb me-2"></i>Quick Insights</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <i class="fas fa-arrow-up text-danger me-2"></i>
+                        <strong>Grid Import:</strong> {{ "%.1f"|format(solar_stats.total_import) }} kWh total
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-arrow-down text-success me-2"></i>
+                        <strong>Solar Export:</strong> {{ "%.1f"|format(solar_stats.total_export) }} kWh total
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-balance-scale text-primary me-2"></i>
+                        <strong>Net Balance:</strong> {{ "%.1f"|format(solar_stats.net_consumption) }} kWh
+                    </li>
+                    <li>
+                        <i class="fas fa-percentage text-info me-2"></i>
+                        <strong>Self Sufficiency:</strong> {{ "%.1f"|format(solar_stats.self_sufficiency) }}%
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header bg-light">
+                <h6 class="mb-0"><i class="fas fa-calendar-alt me-2"></i>Daily Averages</h6>
+            </div>
+            <div class="card-body">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2">
+                        <i class="fas fa-home text-danger me-2"></i>
+                        <strong>Daily Import:</strong> {{ "%.1f"|format(solar_stats.avg_daily_import) }} kWh/day
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-sun text-success me-2"></i>
+                        <strong>Daily Export:</strong> {{ "%.1f"|format(solar_stats.avg_daily_export) }} kWh/day
+                    </li>
+                    <li class="mb-2">
+                        <i class="fas fa-calculator text-primary me-2"></i>
+                        <strong>Net Daily:</strong> {{ "%.1f"|format(solar_stats.avg_daily_import - solar_stats.avg_daily_export) }} kWh/day
+                    </li>
+                    <li>
+                        <i class="fas fa-leaf text-info me-2"></i>
+                        <strong>Generation Efficiency:</strong> 
+                        {{ "%.1f"|format((solar_stats.total_export / (solar_stats.total_import + solar_stats.total_export)) * 100 if (solar_stats.total_import + solar_stats.total_export) > 0 else 0) }}%
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% else %}
+<!-- No Data Available -->
+<div class="row">
+    <div class="col-12">
+        <div class="alert alert-warning">
+            <h4 class="alert-heading"><i class="fas fa-exclamation-triangle me-2"></i>No Solar Data Available</h4>
+            <p>Solar energy data is not currently available. Please ensure the following files are present:</p>
+            <ul>
+                <li><code>octopus_consumption_daily.csv</code> - Daily consumption data</li>
+                <li><code>octopus_consumption_raw.csv</code> - Hourly consumption data</li>
+            </ul>
+            <hr>
+            <p class="mb-0">
+                <a href="{{ url_for('index') }}" class="btn btn-warning">
+                    <i class="fas fa-arrow-left me-1"></i>Return to Dashboard
+                </a>
+            </p>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+{% if chart_json %}
+    // Initial chart rendering
+    var chartData = {{ chart_json|safe }};
+    Plotly.newPlot('solar-chart', chartData.data, chartData.layout, {responsive: true});
+{% endif %}
+
+    // Chart update function
+    function updateChart() {
+        showLoading('chart-container');
+        
+        const formData = new FormData(document.getElementById('chart-controls'));
+        const data = {
+            chart_type: formData.get('chart_type'),
+            start_date: formData.get('start_date'),
+            end_date: formData.get('end_date'),
+            options: formData.getAll('options')
+        };
+        
+        fetch('/api/solar-chart', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(data)
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                const chartData = JSON.parse(data.chart);
+                document.getElementById('chart-container').innerHTML = '<div id="solar-chart"></div>';
+                Plotly.newPlot('solar-chart', chartData.data, chartData.layout, {responsive: true});
+            } else {
+                showError('chart-container', data.error || 'Failed to load chart');
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            showError('chart-container', 'Network error occurred');
+        });
+    }
+    
+    // Quick date range functions
+    function setQuickRange(range) {
+        const startDate = document.getElementById('start-date');
+        const endDate = document.getElementById('end-date');
+        const today = new Date();
+        
+        if (range === 'lifetime') {
+            // Full data range - clear dates to use all data
+            startDate.value = '';
+            endDate.value = '';
+        } else if (range === 'export-start') {
+            // Since export began on March 26th, 2024
+            const exportStart = new Date('2024-03-26');
+            startDate.value = exportStart.toISOString().split('T')[0];
+            endDate.value = today.toISOString().split('T')[0];
+        } else if (range === 'move-in') {
+            // Since move-in date (May 16, 2025)
+            const moveInDate = new Date('2025-05-16');
+            startDate.value = moveInDate.toISOString().split('T')[0];
+            endDate.value = today.toISOString().split('T')[0];
+        } else if (range === 'last30') {
+            const thirtyDaysAgo = new Date(today);
+            thirtyDaysAgo.setDate(today.getDate() - 30);
+            startDate.value = thirtyDaysAgo.toISOString().split('T')[0];
+            endDate.value = today.toISOString().split('T')[0];
+        }
+        
+        updateChart();
+    }
+    
+    // Set date range info and defaults
+    document.addEventListener('DOMContentLoaded', function() {
+        {% if data_available %}
+        // Set date picker limits if data is available
+        const startDateInput = document.getElementById('start-date');
+        const endDateInput = document.getElementById('end-date');
+        
+        {% if data_min_date and data_max_date %}
+        startDateInput.min = '{{ data_min_date }}';
+        startDateInput.max = '{{ data_max_date }}';
+        endDateInput.min = '{{ data_min_date }}';
+        endDateInput.max = '{{ data_max_date }}';
+        {% endif %}
+        
+        // Set default date range to last 30 days
+        setQuickRange('last30');
+        {% endif %}
+    });
+</script>
+{% endblock %} 

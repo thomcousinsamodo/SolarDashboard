@@ -1,24 +1,27 @@
 @echo off
-echo Octopus Energy API Data Fetcher Setup
-echo ===================================
+echo.
+echo ======================================
+echo   Octopus Energy Dashboard Setup
+echo ======================================
+echo.
 
-REM Check if Python is installed
+REM Check if Python is available
 python --version >nul 2>&1
 if errorlevel 1 (
-    echo Python is not installed or not in PATH.
-    echo Please install Python from: https://www.python.org/downloads/
-    echo Make sure to check "Add Python to PATH" during installation.
+    echo ERROR: Python is not installed or not in PATH
+    echo Please install Python 3.8+ and try again
     pause
     exit /b 1
 )
 
-echo Python is installed. Installing dependencies...
+echo Python found - checking dependencies...
 
 REM Install required packages
+echo Installing dependencies...
 pip install -r requirements.txt
-
 if errorlevel 1 (
-    echo Failed to install dependencies.
+    echo ERROR: Failed to install dependencies
+    echo Please check your internet connection and try again
     pause
     exit /b 1
 )
@@ -26,16 +29,26 @@ if errorlevel 1 (
 echo.
 echo Dependencies installed successfully!
 echo.
-echo To use the scripts:
-echo 1. Set your environment variables:
-echo    set OCTOPUS_API_KEY=your_actual_api_key
-echo    set OCTOPUS_ACCOUNT_NUMBER=A-AAAA1111
+
+REM Check for API key file
+if not exist "oct_api.txt" (
+    echo WARNING: No API key file found!
+    echo Please create 'oct_api.txt' with your Octopus Energy API key
+    echo You can get your API key from your Octopus Energy account dashboard
+    echo.
+    echo Creating empty oct_api.txt file...
+    echo your_api_key_here > oct_api.txt
+    echo.
+    echo Please edit 'oct_api.txt' and add your real API key before continuing
+    pause
+)
+
 echo.
-echo 2. Test public API (no auth required):
-echo    python octopus_api_example.py
+echo Setup complete! Starting dashboard...
 echo.
-echo 3. Fetch your consumption data:
-echo    python octopus_energy_fetcher.py
+echo The dashboard will be available at: http://localhost:5000
+echo Press Ctrl+C to stop the dashboard
 echo.
 
-pause 
+REM Start the dashboard
+python dashboard.py 

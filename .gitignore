@@ -245,9 +245,7 @@ backup_data/
 api_keys.py
 credentials.py
 secrets.py
-octopus_credentials.py
-pricing_config.json
-*_api_keys.py
+oct_api.txt
 
 # Dashboard temporary files
 dash_assets/
@@ -300,4 +298,4 @@ test_*.bat
 # Batch utility files (.bat) - included by default  
 # README files - included by default
 # Requirements files - included by default
-# License files - included by default 
+# License files - included by default logs/
