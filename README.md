@@ -1,17 +1,16 @@
-# Octopus Energy API Data Fetcher
+# Octopus Energy Dashboard
 
-A Python script to fetch and analyze electricity import and export data from the Octopus Energy API.
+A comprehensive web dashboard for monitoring solar energy consumption and managing electricity tariff periods using Octopus Energy data.
 
-## Features
+## Overview
 
-- Fetch account information and meter details
-- Download import and export electricity consumption data
-- Analyze consumption patterns with daily and monthly summaries
-- Export data to CSV files for further analysis
-- Handle pagination for large datasets
-- Proper error handling and authentication
+This dashboard provides a unified interface to:
+- **Monitor Solar Energy** - Visualize daily/hourly import and export data with interactive charts
+- **Manage Tariff Periods** - Track different electricity tariffs over time with validation
+- **Analyze Consumption** - Generate insights with rolling averages, net flow analysis, and consumption patterns
+- **Rate Lookup** - Find historical rates for any date/time period
 
-## Setup
+## Quick Start
 
 ### 1. Install Dependencies
 
@@ -19,155 +18,202 @@ A Python script to fetch and analyze electricity import and export data from the
 pip install -r requirements.txt
 ```
 
-Or install manually:
-```bash
-pip install requests pandas python-dateutil
-```
-
-### 2. Get Your API Credentials
+### 2. Get Your Octopus Energy Credentials
 
 You'll need:
-- **API Key**: Get this from your Octopus Energy account dashboard
-- **Account Number**: Found on your bills or account dashboard (format: A-AAAA1111)
+- **API Key**: From your Octopus Energy account dashboard
+- **Account Number**: Found on bills (format: A-AAAA1111)
 
-To get your API key:
-1. Log into your Octopus Energy account
-2. Go to your account dashboard
-3. Look for "Developer" or "API" settings
-4. Generate or copy your API key
-
-### 3. Set Environment Variables (Recommended)
-
-```bash
-export OCTOPUS_API_KEY="your_actual_api_key_here"
-export OCTOPUS_ACCOUNT_NUMBER="A-AAAA1111"
+Save your API key in `oct_api.txt`:
+```
+your_actual_api_key_here
 ```
 
-On Windows (PowerShell):
-```powershell
-$env:OCTOPUS_API_KEY="your_actual_api_key_here"
-$env:OCTOPUS_ACCOUNT_NUMBER="A-AAAA1111"
-```
+### 3. Fetch Your Data (Optional)
 
-## Usage
-
-### Test Public API (No Authentication Required)
-
-Start by testing the public endpoints:
-
-```bash
-python octopus_api_example.py
-```
-
-This will:
-- Fetch available Octopus Energy products
-- Show sample Agile tariff prices
-- Display product details and regional pricing
-
-### Fetch Your Consumption Data
-
-Once you have your credentials set up:
-
+If you want fresh consumption data:
 ```bash
 python octopus_energy_fetcher.py
 ```
 
-This will:
-- Fetch your account information and meter details
-- Download the last 30 days of consumption data
-- Generate daily and monthly summaries
-- Save data to CSV files
+### 4. Run the Dashboard
 
-### Output Files
-
-The script generates these CSV files:
-- `octopus_consumption_raw.csv` - All half-hourly readings
-- `octopus_consumption_daily.csv` - Daily consumption summaries
-- `octopus_consumption_monthly.csv` - Monthly consumption summaries
-
-## Understanding the Data
-
-### Import vs Export Meters
-
-- **Import**: Electricity you consume from the grid
-- **Export**: Electricity you send back to the grid (e.g., from solar panels)
-
-### Data Format
-
-Each reading includes:
-- `interval_start`: When the measurement period started
-- `interval_end`: When the measurement period ended
-- `consumption`: Energy consumed/exported in kWh
-- `meter_type`: "import" or "export"
-
-### Time Zones
-
-- The API returns data in UTC in winter, local time in summer
-- The script automatically handles timezone conversion to UK local time for analysis
-
-## API Endpoints Used
-
-### Authentication Required
-- `/v1/accounts/{account_number}/` - Account and meter information
-- `/v1/electricity-meter-points/{mpan}/meters/{serial}/consumption/` - Consumption data
-
-### Public (No Authentication)
-- `/v1/products/` - Available tariffs and products
-- `/v1/products/{product_code}/` - Specific product details
-- `/v1/products/{product}/electricity-tariffs/{tariff}/standard-unit-rates/` - Pricing data
-
-## Customization
-
-### Change Date Range
-
-Edit the main() function in `octopus_energy_fetcher.py`:
-
-```python
-# Change from 30 days to 90 days
-start_date = end_date - timedelta(days=90)
+```bash
+python dashboard.py
 ```
 
-### Add Your Own Analysis
+The dashboard will be available at: **http://localhost:5000**
 
-The `DataAnalyzer` class can be extended with additional methods:
+## Dashboard Features
 
-```python
-class DataAnalyzer:
-    @staticmethod
-    def peak_usage_analysis(df: pd.DataFrame) -> pd.DataFrame:
-        # Your custom analysis here
-        pass
+### 🔌 Solar Energy Monitoring
+- **Daily Overview Charts** - Import vs export with temperature overlay
+- **Hourly Analysis** - Detailed consumption patterns throughout the day  
+- **Net Flow Visualization** - Balance between consumption and generation
+- **Energy Balance** - Cumulative totals and self-sufficiency metrics
+- **Consumption Patterns** - Weekly/seasonal trend analysis
+
+### ⚡ Tariff Management
+- **Period Timeline** - Visual representation of tariff periods
+- **Validation System** - Automatic detection of gaps and overlaps
+- **Manual Entry** - Support for Economy 7 and custom tariffs
+- **API Integration** - Automatic fetching of Octopus Energy rates
+- **Export Support** - Dedicated handling for feed-in tariffs
+
+### 📊 Advanced Features
+- **Date Range Controls** - Quick presets (Last 30 days, Since Export, etc.)
+- **Rolling Averages** - Smoothed trend lines for long-term analysis
+- **Temperature Integration** - Weather data correlation (when available)
+- **Responsive Design** - Works on desktop, tablet, and mobile
+- **Real-time Updates** - Live chart regeneration with new parameters
+
+## File Structure
+
+```
+OctopusTracker/
+├── dashboard.py              # Main dashboard application
+├── templates/                # Web interface templates
+├── tariff_tracker/          # Tariff management library
+├── legacy_solar/            # Legacy standalone files
+├── octopus_consumption_*.csv # Energy data files
+├── tariff_config.json       # Tariff configuration
+└── logs/                    # Application logs
 ```
 
-## Rate Limiting
+## Data Sources
 
-The Octopus Energy API doesn't have strict rate limits, but be considerate:
-- Don't make excessive requests
-- Cache data when possible
-- Use appropriate page sizes for large datasets
+### Consumption Data
+- `octopus_consumption_daily.csv` - Daily import/export totals
+- `octopus_consumption_raw.csv` - Half-hourly meter readings
+
+### Tariff Data
+- API integration with Octopus Energy for live rates
+- Manual entry support for historical/custom tariffs
+- Validation and timeline management
+
+## Dashboard Sections
+
+### 🏠 Home Dashboard
+- Quick statistics and validation status
+- Recent activity and health checks
+- Navigation to detailed sections
+
+### ☀️ Solar Energy (`/solar`)
+- Interactive charts with multiple visualization types
+- Date range controls and filtering options
+- Energy balance and efficiency metrics
+
+### 🔋 Tariff Management (`/tariffs`)
+- Timeline overview with validation results
+- Period management interface
+- Import/export tariff separation
+
+### ➕ Add Periods (`/add-period`)
+- Wizard-style tariff entry
+- Economy 7 manual rate entry with VAT calculations
+- API-driven tariff selection
+
+### 📋 Periods List (`/periods`)
+- Complete period overview with delete functionality
+- Last updated timestamps and rate counts
+- Bulk operations and management
+
+### 🔍 Rate Lookup (`/rate-lookup`)
+- Historical rate queries for any date/time
+- Support for both import and export rates
+- Detailed rate breakdown with validity periods
+
+## Chart Types
+
+### Daily Overview
+- Line charts showing import vs export trends
+- Optional temperature correlation
+- Rolling averages for trend analysis
+
+### Hourly Analysis  
+- Heatmaps and time-series for detailed patterns
+- Peak usage identification
+- Seasonal variation analysis
+
+### Net Flow
+- Balance between import and export
+- Self-sufficiency calculations
+- Grid dependency metrics
+
+### Energy Balance
+- Cumulative totals over time
+- Monthly/quarterly breakdowns
+- Financial impact analysis
+
+### Consumption Patterns
+- Weekly day-of-week patterns
+- Seasonal trend identification
+- Usage categorization
+
+## API Endpoints
+
+### Dashboard APIs
+- `/api/solar-chart` - Dynamic chart generation
+- `/api/rate-lookup` - Historical rate queries
+- `/api/available-tariffs` - Live tariff data from Octopus
+
+### Management APIs
+- `/api/delete-period` - Remove tariff periods
+- `/refresh-rates` - Update tariff rates from API
+
+## Configuration
+
+### Environment Setup
+Environment variables (optional):
+```bash
+export OCTOPUS_API_KEY="your_api_key"
+export OCTOPUS_ACCOUNT_NUMBER="A-AAAA1111"
+```
+
+### Data Requirements
+- Solar consumption data (CSV files)
+- API key for tariff management
+- Optional weather data integration
+
+## Development
+
+### Architecture
+- **Flask backend** with Plotly for visualization
+- **Bootstrap 5** responsive frontend
+- **Library integration** - uses tariff_tracker as a module
+- **Template system** with Jinja2 for dynamic content
+
+### Key Components
+- `dashboard.py` - Main application and routing
+- `tariff_tracker/` - Tariff management library
+- `templates/` - Web interface templates
+- Chart generation functions for different visualization types
 
 ## Troubleshooting
 
-### Authentication Errors
-- Double-check your API key and account number
-- Ensure environment variables are set correctly
-- Try the public API test first
+### No Solar Data
+- Ensure CSV files exist in root directory
+- Check file format matches expected columns
+- Verify date formatting and data types
 
-### Missing Data
-- Consumption data may not be immediately available
-- SMETS1 meters: Usually available by 9am the next day
-- SMETS2 meters: May take longer to appear
+### Tariff Issues
+- Check API key in `oct_api.txt`
+- Verify internet connection for API calls
+- Review logs for specific error messages
 
-### Time Zone Issues
-- Always use UTC format for API requests
-- The script handles timezone conversion automatically
+### Chart Loading
+- Enable browser developer tools for detailed errors
+- Check console for JavaScript issues
+- Verify chart data format and structure
 
-## API Documentation
+## Migration from Legacy
 
-For more details about the Octopus Energy API:
-- [Official API Documentation](https://developer.octopus.energy/rest/guides/endpoints)
-- [Unofficial API Guide](https://www.guylipman.com/octopus/api_guide.html)
+If upgrading from the standalone solar dashboard:
+- Legacy files moved to `legacy_solar/` directory  
+- All functionality integrated into main dashboard
+- Configuration and data files remain in same location
+- No data migration required
 
 ## License
 
-This project is provided as-is for educational and personal use. 
+This project is provided as-is for educational and personal use with Octopus Energy data. 
