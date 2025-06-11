@@ -124,8 +124,29 @@ class TimelineManager:
         fetch_start = period.start_date
         fetch_end = period.end_date or date.today()
         
-        # Convert to ISO format for API
-        period_from = fetch_start.strftime('%Y-%m-%dT00:00:00Z')
+        # Convert to ISO format for API with BST timezone consideration
+        # During BST (British Summer Time), midnight BST = 23:00 UTC previous day
+        # So we need to fetch from 23:00 UTC the day before to cover BST midnight
+        from datetime import timezone, timedelta
+        import time
+        
+        # Create a timezone-aware datetime for the start date to check if BST is in effect
+        start_datetime = datetime.combine(fetch_start, datetime.min.time()).replace(tzinfo=timezone.utc)
+        
+        # Check if BST is in effect (UTC+1) by using local timezone at that date
+        # Simple check: BST typically runs from last Sunday in March to last Sunday in October
+        is_bst_period = (fetch_start.month > 3 and fetch_start.month < 10) or \
+                       (fetch_start.month == 3 and fetch_start.day > 24) or \
+                       (fetch_start.month == 10 and fetch_start.day < 25)
+        
+        if is_bst_period:
+            # During BST, start fetching from 23:00 UTC the previous day to cover BST midnight
+            api_start_datetime = start_datetime - timedelta(hours=1)
+            period_from = api_start_datetime.strftime('%Y-%m-%dT%H:%M:%SZ')
+        else:
+            # During GMT, start from midnight UTC
+            period_from = fetch_start.strftime('%Y-%m-%dT00:00:00Z')
+        
         period_to = (fetch_end + timedelta(days=1)).strftime('%Y-%m-%dT00:00:00Z')
         
         period_data = {

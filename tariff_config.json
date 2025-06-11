@@ -2459,6 +2459,20 @@
             "value_exc_vat": 13.38,
             "value_inc_vat": 14.049,
             "rate_type": "standard"
+          },
+          {
+            "valid_from": "2025-06-05T23:30:00+00:00",
+            "valid_to": "2025-06-06T00:00:00+00:00",
+            "value_exc_vat": 14.32,
+            "value_inc_vat": 15.036,
+            "rate_type": "standard"
+          },
+          {
+            "valid_from": "2025-06-05T23:00:00+00:00",
+            "valid_to": "2025-06-05T23:30:00+00:00",
+            "value_exc_vat": 15.32,
+            "value_inc_vat": 16.086,
+            "rate_type": "standard"
           }
         ],
         "standing_charges": [
@@ -2470,7 +2484,7 @@
           }
         ],
         "notes": "",
-        "last_updated": "2025-06-11T16:54:12.956201"
+        "last_updated": "2025-06-11T20:03:55.617788"
       }
     ]
   },

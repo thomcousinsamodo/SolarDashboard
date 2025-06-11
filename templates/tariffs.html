@@ -139,13 +139,44 @@
                 <a href="{{ url_for('rate_lookup_form') }}" class="btn btn-info me-2">
                     <i class="fas fa-search"></i> Rate Lookup
                 </a>
-                <form style="display:inline" method="POST" action="/refresh-rates">
-                    <button type="submit" class="btn btn-warning" onclick="return confirm('Refresh all rates?')">
-                        <i class="fas fa-sync"></i> Refresh Rates
-                    </button>
-                </form>
+                <button class="btn btn-warning" onclick="refreshAllRates()">
+                    <i class="fas fa-sync"></i> Refresh Rates
+                </button>
             </div>
         </div>
     </div>
 </div>
+
+<script>
+function refreshAllRates() {
+    if (confirm('This will refresh rates for all periods. This may take some time. Continue?')) {
+        const button = event.target;
+        const originalText = button.innerHTML;
+        button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Refreshing...';
+        button.disabled = true;
+        
+        fetch('/api/refresh-rates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert('All rates refreshed successfully!');
+                location.reload();
+            } else {
+                alert('Error refreshing rates: ' + data.message);
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Error refreshing rates: ' + error.message);
+            button.innerHTML = originalText;
+            button.disabled = false;
+        });
+    }
+}
+</script>
 {% endblock %} 

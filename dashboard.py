@@ -398,6 +398,12 @@ if TARIFF_AVAILABLE:
         from tariff_tracker.web_dashboard import api_delete_period as original_api
         return original_api()
     
+    @app.route('/api/refresh-rates', methods=['POST'])
+    def api_refresh_rates():
+        """API endpoint for refreshing rates - using original functionality."""
+        from tariff_tracker.web_dashboard import api_refresh_rates as original_api
+        return original_api()
+    
     @app.route('/refresh-rates', methods=['POST'])
     def refresh_rates():
         """Refresh rates - using original functionality."""
