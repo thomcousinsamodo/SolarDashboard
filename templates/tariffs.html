@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Tariff Dashboard - Unified Octopus Energy{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold text-info">
+            <i class="fas fa-calculator me-3"></i>
+            Tariff Management Dashboard
+        </h1>
+        <p class="lead text-muted">Manage your electricity tariff periods and rates</p>
+    </div>
+</div>
+
+<!-- Summary Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ summary.import_periods }}</h4>
+                <p class="metric-label mb-0">Import Periods</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">{{ summary.export_periods }}</h4>
+                <p class="metric-label mb-0">Export Periods</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body text-center">
+                <h6 class="metric-value" style="font-size: 1.2rem;">{{ summary.import_active or 'None' }}</h6>
+                <p class="metric-label mb-0">Active Import</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body text-center">
+                <h6 class="metric-value" style="font-size: 1.2rem;">{{ summary.export_active or 'None' }}</h6>
+                <p class="metric-label mb-0">Active Export</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Timeline Validation -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-import me-2"></i>Import Timeline Validation</h5>
+            </div>
+            <div class="card-body">
+                {% set has_import_issues = validation.import.gaps|length > 0 or validation.import.overlaps|length > 0 or validation.import.invalid_periods|length > 0 %}
+                {% if not has_import_issues %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check"></i> No issues found
+                    </div>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Issues Found:</strong>
+                        <ul class="mb-0 mt-2">
+                            {% if validation.import.gaps|length > 0 %}
+                                <li><strong>Gaps:</strong> 
+                                    {% for gap in validation.import.gaps %}
+                                        {{ gap[0] }} to {{ gap[1] }}{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                </li>
+                            {% endif %}
+                            {% if validation.import.overlaps|length > 0 %}
+                                <li><strong>Overlaps:</strong> {{ validation.import.overlaps|length }} period(s)</li>
+                            {% endif %}
+                            {% if validation.import.invalid_periods|length > 0 %}
+                                <li><strong>Invalid periods:</strong> {{ validation.import.invalid_periods|length }} period(s)</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-export me-2"></i>Export Timeline Validation</h5>
+            </div>
+            <div class="card-body">
+                {% set has_export_issues = validation.export.gaps|length > 0 or validation.export.overlaps|length > 0 or validation.export.invalid_periods|length > 0 %}
+                {% if not has_export_issues %}
+                    <div class="alert alert-success">
+                        <i class="fas fa-check"></i> No issues found
+                    </div>
+                {% else %}
+                    <div class="alert alert-warning">
+                        <i class="fas fa-exclamation-triangle"></i> <strong>Issues Found:</strong>
+                        <ul class="mb-0 mt-2">
+                            {% if validation.export.gaps|length > 0 %}
+                                <li><strong>Gaps:</strong> 
+                                    {% for gap in validation.export.gaps %}
+                                        {{ gap[0] }} to {{ gap[1] }}{% if not loop.last %}, {% endif %}
+                                    {% endfor %}
+                                </li>
+                            {% endif %}
+                            {% if validation.export.overlaps|length > 0 %}
+                                <li><strong>Overlaps:</strong> {{ validation.export.overlaps|length }} period(s)</li>
+                            {% endif %}
+                            {% if validation.export.invalid_periods|length > 0 %}
+                                <li><strong>Invalid periods:</strong> {{ validation.export.invalid_periods|length }} period(s)</li>
+                            {% endif %}
+                        </ul>
+                    </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-bolt me-2"></i>Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <a href="{{ url_for('add_period_form') }}" class="btn btn-primary me-2">
+                    <i class="fas fa-plus"></i> Add Period
+                </a>
+                <a href="{{ url_for('periods') }}" class="btn btn-secondary me-2">
+                    <i class="fas fa-list"></i> View Periods
+                </a>
+                <a href="{{ url_for('rate_lookup_form') }}" class="btn btn-info me-2">
+                    <i class="fas fa-search"></i> Rate Lookup
+                </a>
+                <form style="display:inline" method="POST" action="/refresh-rates">
+                    <button type="submit" class="btn btn-warning" onclick="return confirm('Refresh all rates?')">
+                        <i class="fas fa-sync"></i> Refresh Rates
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

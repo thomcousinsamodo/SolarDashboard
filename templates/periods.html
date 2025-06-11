@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}Tariff Periods - Unified Octopus Energy{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold text-info">
+            <i class="fas fa-list me-3"></i>
+            Tariff Periods
+        </h1>
+        <p class="lead text-muted">Manage your electricity tariff periods</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <h3>Import Periods</h3>
+        {% for period in import_periods %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">{{ period.display_name }}</h5>
+                <p><strong>Period:</strong> {{ period.start_date }} - {{ period.end_date or 'Ongoing' }}</p>
+                <p><strong>Type:</strong> {{ period.tariff_type.value.title() }}</p>
+                <p><strong>Product:</strong> {{ period.product_code }}</p>
+                <p><strong>Rates:</strong> {{ period.rates|length }} loaded</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    
+    <div class="col-md-6">
+        <h3>Export Periods</h3>
+        {% for period in export_periods %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5 class="card-title">{{ period.display_name }}</h5>
+                <p><strong>Period:</strong> {{ period.start_date }} - {{ period.end_date or 'Ongoing' }}</p>
+                <p><strong>Type:</strong> {{ period.tariff_type.value.title() }}</p>
+                <p><strong>Product:</strong> {{ period.product_code }}</p>
+                <p><strong>Rates:</strong> {{ period.rates|length }} loaded</p>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %} 

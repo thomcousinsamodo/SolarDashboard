@@ -5,7 +5,7 @@ Logging configuration for the Octopus Tariff Tracker.
 import logging
 import logging.handlers
 import os
-from datetime import datetime
+from datetime import datetime, date
 from typing import Dict, Any
 import json
 
@@ -189,10 +189,13 @@ class StructuredLogger:
     
     def log_validation(self, timeline_type: str, issues: Dict) -> None:
         """Log timeline validation results."""
+        # Convert date objects to strings for JSON serialization
+        serializable_issues = self._convert_dates_to_strings(issues)
+        
         log_data = {
             'type': 'validation',
             'timeline_type': timeline_type,
-            'issues': issues,
+            'issues': serializable_issues,
             'has_issues': any(issues.values()),
             'timestamp': datetime.now().isoformat()
         }
@@ -201,6 +204,19 @@ class StructuredLogger:
             self.logger.warning(f"Timeline validation issues: {json.dumps(log_data)}")
         else:
             self.logger.info(f"Timeline validation passed: {json.dumps(log_data)}")
+    
+    def _convert_dates_to_strings(self, obj):
+        """Recursively convert date and datetime objects to strings for JSON serialization."""
+        if isinstance(obj, dict):
+            return {key: self._convert_dates_to_strings(value) for key, value in obj.items()}
+        elif isinstance(obj, (list, tuple)):
+            return [self._convert_dates_to_strings(item) for item in obj]
+        elif isinstance(obj, datetime):
+            return obj.isoformat()
+        elif isinstance(obj, date):
+            return obj.isoformat()
+        else:
+            return obj
 
 
 class TimingContext:

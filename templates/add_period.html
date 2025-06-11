@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Add Period - Unified Octopus Energy{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="display-5 fw-bold text-info">
+            <i class="fas fa-plus me-3"></i>
+            Add Tariff Period
+        </h1>
+        <p class="lead text-muted">Add a new electricity tariff period</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="flow_direction" class="form-label">Flow Direction</label>
+                            <select class="form-select" name="flow_direction" required>
+                                <option value="import">Import</option>
+                                <option value="export">Export</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="tariff_type" class="form-label">Tariff Type</label>
+                            <select class="form-select" name="tariff_type" required>
+                                <option value="agile">Agile</option>
+                                <option value="go">Go</option>
+                                <option value="fixed">Fixed</option>
+                                <option value="variable">Variable</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="display_name" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" name="display_name" required>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="product_code" class="form-label">Product Code</label>
+                        <input type="text" class="form-control" name="product_code" required>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="start_date" class="form-label">Start Date</label>
+                            <input type="date" class="form-control" name="start_date" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label for="end_date" class="form-label">End Date (Optional)</label>
+                            <input type="date" class="form-control" name="end_date">
+                        </div>
+                    </div>
+                    
+                    <div class="row mb-3">
+                        <div class="col-md-6">
+                            <label for="region" class="form-label">Region</label>
+                            <select class="form-select" name="region">
+                                <option value="A">A - Eastern England</option>
+                                <option value="B" selected>B - East Midlands</option>
+                                <option value="C">C - London</option>
+                                <option value="D">D - Merseyside and Northern Wales</option>
+                                <option value="E">E - West Midlands</option>
+                                <option value="F">F - North Eastern England</option>
+                                <option value="G">G - North Western England</option>
+                                <option value="H">H - Southern England</option>
+                                <option value="J">J - South Eastern England</option>
+                                <option value="K">K - South Western England</option>
+                                <option value="L">L - South Wales</option>
+                                <option value="M">M - Scotland</option>
+                                <option value="N">N - South Scotland</option>
+                                <option value="P">P - North Scotland</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="notes" class="form-label">Notes (Optional)</label>
+                        <textarea class="form-control" name="notes" rows="3"></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save me-1"></i>Add Period
+                        </button>
+                        <a href="{{ url_for('periods') }}" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left me-1"></i>Cancel
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 
