@@ -280,6 +280,51 @@ def api_solar_chart():
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
 
+@app.route('/api/solar-summary', methods=['POST'])
+def api_solar_summary():
+    """API endpoint for getting solar summary stats for a date range."""
+    try:
+        data = request.get_json()
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        # Load solar data
+        solar_data = load_solar_data()
+        daily_df = solar_data['daily']
+        
+        if daily_df.empty:
+            return jsonify({'success': False, 'error': 'No solar data available'})
+        
+        # Filter data by date range if provided
+        filtered_df = daily_df.copy()
+        if start_date and end_date:
+            filtered_df = daily_df[
+                (daily_df['date'] >= start_date) & 
+                (daily_df['date'] <= end_date)
+            ]
+        
+        if filtered_df.empty:
+            return jsonify({'success': False, 'error': 'No data available for selected date range'})
+        
+        # Calculate stats for filtered data
+        solar_stats = calculate_summary_stats(filtered_df)
+        
+        return jsonify({
+            'success': True,
+            'stats': {
+                'total_import': round(solar_stats.total_import, 1),
+                'total_export': round(solar_stats.total_export, 1),
+                'net_consumption': round(solar_stats.net_consumption, 1),
+                'self_sufficiency': round(solar_stats.self_sufficiency, 1),
+                'avg_daily_import': round(solar_stats.avg_daily_import, 1),
+                'avg_daily_export': round(solar_stats.avg_daily_export, 1),
+                'generation_efficiency': round((solar_stats.total_export / (solar_stats.total_import + solar_stats.total_export)) * 100 if (solar_stats.total_import + solar_stats.total_export) > 0 else 0, 1)
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
 # Tariff management routes (only if available)
 if TARIFF_AVAILABLE:
     @app.route('/tariffs')
@@ -1225,6 +1270,120 @@ def create_empty_chart(message):
         yaxis=dict(showgrid=False, showticklabels=False)
     )
     return fig
+
+@app.route('/api/solar-charts-all', methods=['POST'])
+def api_solar_charts_all():
+    """API endpoint for generating all solar charts at once."""
+    try:
+        data = request.get_json()
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        options = data.get('options', [])
+        
+        # Load solar data
+        solar_data = load_solar_data()
+        daily_df = solar_data['daily']
+        raw_df = solar_data['raw']
+        
+        if daily_df.empty:
+            return jsonify({'success': False, 'error': 'No solar data available'})
+        
+        # Filter data by date range if provided
+        filtered_df = daily_df.copy()
+        if start_date and end_date:
+            filtered_df = daily_df[
+                (daily_df['date'] >= start_date) & 
+                (daily_df['date'] <= end_date)
+            ]
+            
+            # Check if filtered data is empty due to date range selection
+            if filtered_df.empty:
+                empty_message = f"No data available for selected date range<br>{start_date} to {end_date}"
+                empty_fig = create_empty_chart(empty_message)
+                empty_chart_json = json.dumps(empty_fig, cls=plotly.utils.PlotlyJSONEncoder)
+                return jsonify({
+                    'success': True, 
+                    'charts': {
+                        'daily_overview': empty_chart_json,
+                        'hourly_analysis': empty_chart_json,
+                        'net_flow': empty_chart_json,
+                        'energy_balance': empty_chart_json,
+                        'consumption_pattern': empty_chart_json
+                    }
+                })
+        
+        # Check if date range is more than 30 days for rolling averages
+        date_range_days = 0
+        if start_date and end_date:
+            date_range_days = (pd.to_datetime(end_date) - pd.to_datetime(start_date)).days
+        elif not filtered_df.empty:
+            date_range_days = (filtered_df['date'].max() - filtered_df['date'].min()).days
+        
+        # Generate chart options
+        show_temperature = 'show_temperature' in options
+        use_rolling_avg = 'use_rolling_avg' in options and date_range_days > 30
+        
+        charts = {}
+        
+        # Generate all charts
+        try:
+            # Daily Overview Chart
+            fig = create_daily_overview_chart(filtered_df, show_temperature, use_rolling_avg)
+            charts['daily_overview'] = json.dumps(fix_chart_binary_data(fig.to_dict()), cls=plotly.utils.PlotlyJSONEncoder)
+        except Exception as e:
+            charts['daily_overview'] = json.dumps(create_empty_chart(f"Error generating daily overview: {str(e)}"), cls=plotly.utils.PlotlyJSONEncoder)
+        
+        try:
+            # Hourly Analysis Chart (only if raw data available)
+            if not raw_df.empty:
+                fig = create_hourly_analysis_chart(raw_df, start_date, end_date)
+                charts['hourly_analysis'] = json.dumps(fix_chart_binary_data(fig.to_dict()), cls=plotly.utils.PlotlyJSONEncoder)
+            else:
+                charts['hourly_analysis'] = json.dumps(create_empty_chart("Hourly raw data not available"), cls=plotly.utils.PlotlyJSONEncoder)
+        except Exception as e:
+            charts['hourly_analysis'] = json.dumps(create_empty_chart(f"Error generating hourly analysis: {str(e)}"), cls=plotly.utils.PlotlyJSONEncoder)
+        
+        try:
+            # Net Flow Chart
+            fig = create_net_flow_chart(filtered_df, show_temperature, use_rolling_avg)
+            charts['net_flow'] = json.dumps(fix_chart_binary_data(fig.to_dict()), cls=plotly.utils.PlotlyJSONEncoder)
+        except Exception as e:
+            charts['net_flow'] = json.dumps(create_empty_chart(f"Error generating net flow: {str(e)}"), cls=plotly.utils.PlotlyJSONEncoder)
+        
+        try:
+            # Energy Balance Chart
+            fig = create_energy_balance_chart(filtered_df)
+            charts['energy_balance'] = json.dumps(fix_chart_binary_data(fig.to_dict()), cls=plotly.utils.PlotlyJSONEncoder)
+        except Exception as e:
+            charts['energy_balance'] = json.dumps(create_empty_chart(f"Error generating energy balance: {str(e)}"), cls=plotly.utils.PlotlyJSONEncoder)
+        
+        try:
+            # Consumption Pattern Chart
+            fig = create_consumption_pattern_chart(filtered_df, use_rolling_avg)
+            charts['consumption_pattern'] = json.dumps(fix_chart_binary_data(fig.to_dict()), cls=plotly.utils.PlotlyJSONEncoder)
+        except Exception as e:
+            charts['consumption_pattern'] = json.dumps(create_empty_chart(f"Error generating consumption pattern: {str(e)}"), cls=plotly.utils.PlotlyJSONEncoder)
+        
+        return jsonify({'success': True, 'charts': charts})
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 400
+
+def fix_chart_binary_data(chart_dict):
+    """Fix any binary encoded arrays in chart data to prevent frontend issues."""
+    # Convert any binary encoded arrays to regular lists
+    for trace in chart_dict.get('data', []):
+        for key in ['x', 'y', 'z']:
+            if key in trace and isinstance(trace[key], dict):
+                if 'dtype' in trace[key] and 'bdata' in trace[key]:
+                    # Convert binary data back to regular array
+                    import numpy as np
+                    import base64
+                    binary_data = base64.b64decode(trace[key]['bdata'])
+                    dtype = trace[key]['dtype']
+                    array = np.frombuffer(binary_data, dtype=dtype)
+                    trace[key] = array.tolist()  # Convert to regular Python list
+    return chart_dict
 
 if __name__ == '__main__':
     print("🐙 Starting Unified Octopus Energy Dashboard...")
