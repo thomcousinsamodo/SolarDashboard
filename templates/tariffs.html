@@ -122,6 +122,64 @@
     </div>
 </div>
 
+<!-- Rate Chart -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5><i class="fas fa-chart-line me-2"></i>Rate Timeline</h5>
+            </div>
+            <div class="card-body">
+                <!-- Chart Controls -->
+                <div class="row mb-3">
+                    <div class="col-md-2">
+                        <label for="rateChartType" class="form-label">Chart Type</label>
+                        <select class="form-select" id="rateChartType" onchange="updateRateChart()">
+                            <option value="timeline">Timeline</option>
+                            <option value="daily_avg">Daily Average</option>
+                            <option value="period_comparison">Period Comparison</option>
+                        </select>
+                    </div>
+                    <div class="col-md-2">
+                        <label for="rateFlowDirection" class="form-label">Flow Direction</label>
+                        <select class="form-select" id="rateFlowDirection" onchange="updateRateChart()">
+                            <option value="import">Import</option>
+                            <option value="export">Export</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rateStartDate" class="form-label">Start Date</label>
+                        <input type="date" class="form-control" id="rateStartDate" onchange="updateRateChart()">
+                    </div>
+                    <div class="col-md-3">
+                        <label for="rateEndDate" class="form-label">End Date</label>
+                        <input type="date" class="form-control" id="rateEndDate" onchange="updateRateChart()">
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label">&nbsp;</label>
+                        <div>
+                            <button class="btn btn-primary btn-sm" onclick="updateRateChart()">
+                                <i class="fas fa-chart-bar"></i> Update Chart
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Chart Container -->
+                <div id="rateChartContainer">
+                    <div id="rateChart"></div>
+                    <div id="rateChartLoading" class="text-center mt-3" style="display: none;">
+                        <div class="spinner-border text-primary" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        <p class="mt-2">Generating rate chart...</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Quick Actions -->
 <div class="row">
     <div class="col-12">
@@ -147,6 +205,7 @@
     </div>
 </div>
 
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
 <script>
 function refreshAllRates() {
     if (confirm('This will refresh rates for all periods. This may take some time. Continue?')) {
@@ -178,5 +237,71 @@ function refreshAllRates() {
         });
     }
 }
+
+function updateRateChart() {
+    const chartType = document.getElementById('rateChartType').value;
+    const flowDirection = document.getElementById('rateFlowDirection').value;
+    const startDate = document.getElementById('rateStartDate').value;
+    const endDate = document.getElementById('rateEndDate').value;
+    
+    // Show loading indicator
+    document.getElementById('rateChartLoading').style.display = 'block';
+    document.getElementById('rateChart').style.display = 'none';
+    
+    const requestData = {
+        chart_type: chartType,
+        flow_direction: flowDirection,
+        start_date: startDate,
+        end_date: endDate
+    };
+    
+    fetch('/api/rate-chart', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestData)
+    })
+    .then(response => response.json())
+    .then(data => {
+        // Hide loading indicator
+        document.getElementById('rateChartLoading').style.display = 'none';
+        document.getElementById('rateChart').style.display = 'block';
+        
+        if (data.success) {
+            // Parse and display the chart
+            const chartData = JSON.parse(data.chart);
+            Plotly.newPlot('rateChart', chartData.data, chartData.layout, {
+                responsive: true,
+                displayModeBar: true,
+                modeBarButtonsToRemove: ['pan2d', 'lasso2d', 'select2d']
+            });
+        } else {
+            document.getElementById('rateChart').innerHTML = 
+                '<div class="alert alert-danger">Error: ' + data.error + '</div>';
+        }
+    })
+    .catch(error => {
+        // Hide loading indicator
+        document.getElementById('rateChartLoading').style.display = 'none';
+        document.getElementById('rateChart').style.display = 'block';
+        
+        console.error('Error:', error);
+        document.getElementById('rateChart').innerHTML = 
+            '<div class="alert alert-danger">Error loading chart: ' + error.message + '</div>';
+    });
+}
+
+// Initialize the rate chart when page loads
+document.addEventListener('DOMContentLoaded', function() {
+    // Set default date range (last 7 days)
+    const today = new Date();
+    const weekAgo = new Date(today);
+    weekAgo.setDate(today.getDate() - 7);
+    
+    document.getElementById('rateStartDate').value = weekAgo.toISOString().split('T')[0];
+    document.getElementById('rateEndDate').value = today.toISOString().split('T')[0];
+    
+    // Load initial chart
+    updateRateChart();
+});
 </script>
 {% endblock %} 

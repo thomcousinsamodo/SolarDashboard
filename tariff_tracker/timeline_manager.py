@@ -550,7 +550,7 @@ class TimelineManager:
             
             log_msg = f"Export={export_rate_value:.3f}p"
         
-        # Create standing charge
+        # Create standing charge only for Economy 7 (not for export tariffs)
         if is_economy7:
             # Economy 7 standing charges have VAT
             standing_charge = StandingCharge(
@@ -559,20 +559,16 @@ class TimelineManager:
                 value_exc_vat=manual_rates['standing_charge_exc_vat'],
                 value_inc_vat=manual_rates['standing_charge_inc_vat']
             )
-        else:
-            # Export standing charges don't have VAT
-            standing_charge_value = manual_rates['standing_charge_exc_vat']
-            standing_charge = StandingCharge(
-                valid_from=start_datetime,
-                valid_to=end_datetime,
-                value_exc_vat=standing_charge_value,
-                value_inc_vat=standing_charge_value  # Same as exc_vat since no VAT on exports
-            )
-        period.standing_charges.append(standing_charge)
+            period.standing_charges.append(standing_charge)
+        # Export tariffs don't have standing charges - skip this step
         
         # Update last updated timestamp
         period.last_updated = datetime.now()
         
         tariff_type = "Economy 7" if is_economy7 else "export"
-        standing_charge_log = manual_rates['standing_charge_inc_vat'] if is_economy7 else manual_rates['standing_charge_exc_vat']
-        self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}, SC={standing_charge_log:.3f}p")
+        if is_economy7:
+            standing_charge_log = manual_rates['standing_charge_inc_vat']
+            self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}, SC={standing_charge_log:.3f}p")
+        else:
+            # Export tariffs don't have standing charges
+            self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}")

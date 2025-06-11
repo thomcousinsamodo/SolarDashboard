@@ -411,15 +411,15 @@
           {
             "valid_from": "2025-05-05T00:00:00+00:00",
             "valid_to": "2025-06-05T23:59:59.999999+00:00",
-            "value_exc_vat": 0.3128,
-            "value_inc_vat": 0.32844,
+            "value_exc_vat": 31.28,
+            "value_inc_vat": 32.844,
             "rate_type": "day"
           },
           {
             "valid_from": "2025-05-05T00:00:00+00:00",
             "valid_to": "2025-06-05T23:59:59.999999+00:00",
-            "value_exc_vat": 0.1394,
-            "value_inc_vat": 0.14637,
+            "value_exc_vat": 13.94,
+            "value_inc_vat": 14.637,
             "rate_type": "night"
           }
         ],
@@ -427,12 +427,12 @@
           {
             "valid_from": "2025-05-05T00:00:00+00:00",
             "valid_to": "2025-06-05T23:59:59.999999+00:00",
-            "value_exc_vat": 0.4545,
-            "value_inc_vat": 0.47723
+            "value_exc_vat": 45.45,
+            "value_inc_vat": 47.723
           }
         ],
         "notes": "",
-        "last_updated": "2025-06-11T18:19:56.601922"
+        "last_updated": "2025-06-11T20:39:35.479818"
       },
       {
         "start_date": "2025-06-06",

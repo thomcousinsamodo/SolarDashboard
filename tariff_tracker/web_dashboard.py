@@ -606,6 +606,10 @@ def add_period_form():
                     document.querySelector('label[for="night_rate_input"]').parentElement.parentElement.style.display = 'none';
                     document.getElementById('night_rate_input').required = false;
                     
+                    // Hide standing charge field for export (no standing charges)
+                    document.querySelector('label[for="standing_charge_input"]').parentElement.style.display = 'none';
+                    document.getElementById('standing_charge_input').required = false;
+                    
                     // Hide VAT controls for exports (VAT doesn't apply to exports)
                     document.getElementById('vat_controls_row').style.display = 'none';
                     // Set defaults for exports
@@ -625,6 +629,9 @@ def add_period_form():
                 document.getElementById('product_code').readOnly = false;
                 // Show night rate field for normal cases
                 document.querySelector('label[for="night_rate_input"]').parentElement.parentElement.style.display = 'block';
+                
+                // Show standing charge field for non-export tariffs
+                document.querySelector('label[for="standing_charge_input"]').parentElement.style.display = 'block';
                 
                 // Show VAT controls for non-export tariffs
                 document.getElementById('vat_controls_row').style.display = 'flex';
@@ -664,8 +671,9 @@ def add_period_form():
                 dayRateIncVat = dayRateInput;  // Same value since no VAT
                 nightRateExcVat = nightRateInput;
                 nightRateIncVat = nightRateInput;
-                standingChargeExcVat = standingChargeInput;
-                standingChargeIncVat = standingChargeInput;
+                // Export tariffs don't have standing charges
+                standingChargeExcVat = 0;
+                standingChargeIncVat = 0;
             } else {
             
                 if (rateBasis === 'inc_vat') {
@@ -697,10 +705,10 @@ def add_period_form():
             
             // Update display text
             if (flowDirection === 'export') {
-                // For exports, don't show VAT calculations
+                // For exports, don't show VAT calculations and no standing charges
                 document.getElementById('day_rate_calculated').textContent = `(No VAT applies to exports)`;
                 document.getElementById('night_rate_calculated').textContent = `(No VAT applies to exports)`;
-                document.getElementById('standing_charge_calculated').textContent = `(No VAT applies to exports)`;
+                // Don't update standing charge text for exports since field is hidden
             } else if (rateBasis === 'inc_vat') {
                 document.getElementById('day_rate_calculated').textContent = `Exc VAT: ${dayRateExcVat.toFixed(3)}p`;
                 document.getElementById('night_rate_calculated').textContent = `Exc VAT: ${nightRateExcVat.toFixed(3)}p`;
@@ -799,15 +807,15 @@ def add_period():
         
         # Handle rate fetching based on tariff type and flow direction
         if tariff_type == TariffType.ECONOMY7:
-            # Handle manual Economy 7 rate entry (with automatic VAT calculation)
+            # Handle manual Economy 7 rate entry (already in pence)
             try:
                 manual_rates = {
-                    'day_rate_exc_vat': float(request.form.get('day_rate_exc_vat', 0)) / 100,  # Convert p to £
-                    'day_rate_inc_vat': float(request.form.get('day_rate_inc_vat', 0)) / 100,
-                    'night_rate_exc_vat': float(request.form.get('night_rate_exc_vat', 0)) / 100,
-                    'night_rate_inc_vat': float(request.form.get('night_rate_inc_vat', 0)) / 100,
-                    'standing_charge_exc_vat': float(request.form.get('standing_charge_exc_vat', 0)) / 100,
-                    'standing_charge_inc_vat': float(request.form.get('standing_charge_inc_vat', 0)) / 100,
+                    'day_rate_exc_vat': float(request.form.get('day_rate_exc_vat', 0)),  # Already in pence
+                    'day_rate_inc_vat': float(request.form.get('day_rate_inc_vat', 0)),
+                    'night_rate_exc_vat': float(request.form.get('night_rate_exc_vat', 0)),
+                    'night_rate_inc_vat': float(request.form.get('night_rate_inc_vat', 0)),
+                    'standing_charge_exc_vat': float(request.form.get('standing_charge_exc_vat', 0)),
+                    'standing_charge_inc_vat': float(request.form.get('standing_charge_inc_vat', 0)),
                 }
                 
                 # Store manual Economy 7 rates
@@ -821,16 +829,13 @@ def add_period():
             # Export tariffs require manual entry (not available via API)
             if request.form.get('day_rate_exc_vat'):  # Check if manual rates were provided
                 try:
-                    # For export rates, only use the exc_vat value (no VAT on export sales)
                     # Store in pence to match API rate units
                     export_rate = float(request.form.get('day_rate_exc_vat', 0))
-                    standing_charge = float(request.form.get('standing_charge_exc_vat', 0)) / 100  # SC still in pence/day
                     
                     manual_rates = {
                         'day_rate_exc_vat': export_rate,  # Reuse day_rate as export_rate
                         'day_rate_inc_vat': export_rate,  # Same as exc_vat since no VAT on exports
-                        'standing_charge_exc_vat': standing_charge,
-                        'standing_charge_inc_vat': standing_charge,  # Same as exc_vat for exports
+                        # No standing charges for export tariffs
                     }
                     
                     # Store manual export rates

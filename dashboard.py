@@ -409,6 +409,50 @@ if TARIFF_AVAILABLE:
         """Refresh rates - using original functionality."""
         from tariff_tracker.web_dashboard import refresh_rates as original_refresh
         return original_refresh()
+    
+    @app.route('/api/rate-chart', methods=['POST'])
+    def api_rate_chart():
+        """API endpoint for generating rate charts."""
+        try:
+            data = request.get_json()
+            chart_type = data.get('chart_type', 'timeline')
+            start_date = data.get('start_date')
+            end_date = data.get('end_date') 
+            flow_direction = data.get('flow_direction', 'import')
+            
+            # Default to last 7 days if no dates provided
+            if not start_date or not end_date:
+                end_date = date.today()
+                start_date = end_date - timedelta(days=7)
+            
+            # Get filtered pricing data from CSV
+            rate_df = get_filtered_pricing_data(start_date, end_date, flow_direction)
+            
+            if rate_df.empty:
+                fig = create_empty_rate_chart(f"No rate data available for {flow_direction} from {start_date} to {end_date}<br><br>💡 Run generate_pricing_data.py to create pricing data", flow_direction)
+            else:
+                fig = create_rate_timeline_chart(rate_df, chart_type, flow_direction)
+            
+            # Convert to JSON (same approach as solar charts)
+            chart_dict = fig.to_dict()
+            
+            # Convert any binary encoded arrays to regular lists
+            for trace in chart_dict.get('data', []):
+                for key in ['x', 'y', 'z']:
+                    if key in trace and isinstance(trace[key], dict):
+                        if 'dtype' in trace[key] and 'bdata' in trace[key]:
+                            import numpy as np
+                            import base64
+                            binary_data = base64.b64decode(trace[key]['bdata'])
+                            dtype = trace[key]['dtype']
+                            array = np.frombuffer(binary_data, dtype=dtype)
+                            trace[key] = array.tolist()
+            
+            chart_json = json.dumps(chart_dict, cls=plotly.utils.PlotlyJSONEncoder)
+            return jsonify({'success': True, 'chart': chart_json})
+            
+        except Exception as e:
+            return jsonify({'success': False, 'error': str(e)}), 400
 
 # Chart creation functions (from solar dashboard)
 def add_rolling_averages(df, window=7):
@@ -873,6 +917,287 @@ def create_consumption_pattern_chart(df, use_rolling_avg=False):
         yaxis_title=yaxis_title,
         template='plotly_white'
     )
+    
+    return fig
+
+def load_pricing_data():
+    """Load pricing data from CSV file."""
+    pricing_file = 'pricing_raw.csv'
+    
+    if not os.path.exists(pricing_file):
+        print(f"Warning: {pricing_file} not found. Run generate_pricing_data.py first.")
+        return pd.DataFrame()
+    
+    try:
+        df = pd.read_csv(pricing_file)
+        if not df.empty:
+            # Convert datetime column to UTC timezone for consistent filtering
+            df['datetime'] = pd.to_datetime(df['datetime'], utc=True)
+            df = df.sort_values(['datetime', 'flow_direction']).reset_index(drop=True)
+        return df
+    except Exception as e:
+        print(f"Error loading pricing data: {e}")
+        return pd.DataFrame()
+
+def get_filtered_pricing_data(start_date, end_date, flow_direction='import'):
+    """Get filtered pricing data for the specified date range and flow direction.
+    
+    Args:
+        start_date: Start date (string or date object)
+        end_date: End date (string or date object) 
+        flow_direction: 'import' or 'export'
+        
+    Returns:
+        pandas.DataFrame with filtered pricing data
+    """
+    # Load full pricing dataset
+    df = load_pricing_data()
+    
+    if df.empty:
+        return pd.DataFrame()
+        
+    try:
+        # Convert string dates to timezone-aware datetime objects
+        if isinstance(start_date, str):
+            start_date = pd.to_datetime(start_date, utc=True)
+        if isinstance(end_date, str):
+            end_date = pd.to_datetime(end_date, utc=True)
+            
+        # Convert date objects to timezone-aware datetime
+        if hasattr(start_date, 'date') and not hasattr(start_date, 'tz'):
+            start_date = pd.to_datetime(start_date, utc=True)
+        if hasattr(end_date, 'date') and not hasattr(end_date, 'tz'):
+            end_date = pd.to_datetime(end_date, utc=True)
+        
+        # Ensure end_date includes the full day
+        if hasattr(end_date, 'time') and end_date.time() == pd.Timestamp('00:00:00').time():
+            end_date = end_date.replace(hour=23, minute=59, second=59)
+            
+        # Filter by date range and flow direction
+        mask = (
+            (df['datetime'] >= start_date) & 
+            (df['datetime'] <= end_date) &
+            (df['flow_direction'] == flow_direction)
+        )
+        
+        filtered_df = df[mask].copy()
+        print(f"Debug: Filtered {len(filtered_df)} records for {flow_direction} from {start_date} to {end_date}")
+        return filtered_df.reset_index(drop=True)
+        
+    except Exception as e:
+        print(f"Error filtering pricing data: {e}")
+        import traceback
+        traceback.print_exc()
+        return pd.DataFrame()
+
+def create_empty_rate_chart(message, flow_direction='import'):
+    """Create an empty rate chart with a message and pricing data availability info"""
+    fig = go.Figure()
+    
+    # Get pricing data availability info
+    data_range_info = ""
+    try:
+        pricing_df = load_pricing_data()
+        if not pricing_df.empty:
+            # Filter for the specific flow direction and remove NaN rates
+            flow_data = pricing_df[pricing_df['flow_direction'] == flow_direction].dropna(subset=['rate_inc_vat'])
+            if not flow_data.empty:
+                min_date = flow_data['datetime'].min().strftime('%Y-%m-%d')
+                max_date = flow_data['datetime'].max().strftime('%Y-%m-%d')
+                data_range_info = f"<br><br>📅 {flow_direction.title()} data available: {min_date} to {max_date}"
+    except:
+        pass
+    
+    fig.add_annotation(
+        text=f"{message}{data_range_info}",
+        xref="paper", yref="paper",
+        x=0.5, y=0.5,
+        xanchor='center', yanchor='middle',
+        showarrow=False,
+        font=dict(size=16, color="gray")
+    )
+    fig.update_layout(
+        template='plotly_white',
+        xaxis=dict(showgrid=False, showticklabels=False),
+        yaxis=dict(showgrid=False, showticklabels=False),
+        height=500
+    )
+    return fig
+
+def create_rate_timeline_chart(rate_df, chart_type='timeline', flow_direction='import'):
+    """Create a chart showing rates over time.
+    
+    Args:
+        rate_df: DataFrame with rate data from get_filtered_pricing_data
+        chart_type: 'timeline', 'daily_avg', or 'period_comparison'
+        flow_direction: 'import' or 'export' for better error messages
+    """
+    if rate_df.empty:
+        return create_empty_rate_chart("No rate data available for selected period", flow_direction)
+        
+    fig = go.Figure()
+    
+    if chart_type == 'timeline':
+        # Remove gaps (None values) for cleaner display
+        valid_data = rate_df.dropna(subset=['rate_inc_vat'])
+        
+        if valid_data.empty:
+            return create_empty_rate_chart("No valid rate data found for selected period", flow_direction)
+        
+        # Calculate the time period in days
+        if not valid_data.empty:
+            date_range = (valid_data['datetime'].max() - valid_data['datetime'].min()).days
+            
+            # Auto-switch to daily averages for large time periods to prevent solid block appearance
+            if date_range > 90:  # More than 3 months
+                print(f"Large time period detected ({date_range} days) - using daily averages for better visibility")
+                
+                # Calculate daily averages
+                daily_avg = valid_data.groupby(valid_data['datetime'].dt.date).agg({
+                    'rate_inc_vat': ['mean', 'min', 'max'],
+                    'rate_exc_vat': 'mean'
+                }).round(3)
+                
+                # Flatten column names
+                daily_avg.columns = ['avg_rate_inc_vat', 'min_rate_inc_vat', 'max_rate_inc_vat', 'avg_rate_exc_vat']
+                daily_avg = daily_avg.reset_index()
+                daily_avg = daily_avg.dropna(subset=['avg_rate_inc_vat'])
+                
+                if daily_avg.empty:
+                    return create_empty_rate_chart("No daily average data available for selected period", flow_direction)
+                
+                # Add min/max range as fill
+                fig.add_trace(go.Scatter(
+                    x=daily_avg['datetime'],
+                    y=daily_avg['max_rate_inc_vat'],
+                    mode='lines',
+                    line=dict(width=0),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ))
+                
+                fig.add_trace(go.Scatter(
+                    x=daily_avg['datetime'],
+                    y=daily_avg['min_rate_inc_vat'],
+                    mode='lines',
+                    line=dict(width=0),
+                    fillcolor='rgba(54, 162, 235, 0.2)',
+                    fill='tonexty',
+                    name='Daily Range',
+                    hovertemplate='Min: %{y:.2f}p/kWh<br>%{x}<extra></extra>'
+                ))
+                
+                # Add average line on top
+                fig.add_trace(go.Scatter(
+                    x=daily_avg['datetime'],
+                    y=daily_avg['avg_rate_inc_vat'],
+                    mode='lines',
+                    name='Daily Average (inc VAT)',
+                    line=dict(color=colors['primary'], width=2),
+                    hovertemplate='<b>%{y:.2f}p/kWh</b> (daily avg)<br>%{x}<br><extra></extra>'
+                ))
+                
+                title = f'Electricity Rates Over Time (Daily Averages - {date_range} days)'
+                xaxis_title = 'Date'
+                
+            else:
+                # Use half-hourly data for shorter periods
+                fig.add_trace(go.Scatter(
+                    x=valid_data['datetime'],
+                    y=valid_data['rate_inc_vat'],
+                    mode='lines',
+                    name='Rate (inc VAT)',
+                    line=dict(color=colors['primary'], width=1),
+                    hovertemplate='<b>%{y:.2f}p/kWh</b><br>%{x}<br><extra></extra>'
+                ))
+                
+                title = f'Electricity Rates Over Time (Half-hourly - {date_range} days)'
+                xaxis_title = 'Date & Time'
+        
+        fig.update_layout(
+            title=title,
+            xaxis_title=xaxis_title,
+            yaxis_title='Rate (pence/kWh)',
+            height=500
+        )
+        
+    elif chart_type == 'daily_avg':
+        # Daily average rates
+        daily_avg = rate_df.groupby(rate_df['datetime'].dt.date).agg({
+            'rate_inc_vat': 'mean',
+            'rate_exc_vat': 'mean'
+        }).reset_index()
+        daily_avg.columns = ['date', 'avg_rate_inc_vat', 'avg_rate_exc_vat']
+        
+        # Filter out NaN values
+        daily_avg = daily_avg.dropna(subset=['avg_rate_inc_vat'])
+        
+        if daily_avg.empty:
+            return create_empty_rate_chart("No daily average data available for selected period", flow_direction)
+        
+        fig.add_trace(go.Scatter(
+            x=daily_avg['date'],
+            y=daily_avg['avg_rate_inc_vat'],
+            mode='lines+markers',
+            name='Daily Average (inc VAT)',
+            line=dict(color=colors['primary'], width=2),
+            marker=dict(size=6),
+            hovertemplate='<b>%{y:.2f}p/kWh</b><br>%{x}<br><extra></extra>'
+        ))
+        
+        fig.update_layout(
+            title='Daily Average Electricity Rates',
+            xaxis_title='Date',
+            yaxis_title='Average Rate (pence/kWh)',
+            height=500
+        )
+        
+    elif chart_type == 'period_comparison':
+        # Compare rates by tariff period
+        period_stats = rate_df.groupby('period_name').agg({
+            'rate_inc_vat': ['mean', 'min', 'max', 'std']
+        }).round(3)
+        
+        period_stats.columns = ['avg_rate', 'min_rate', 'max_rate', 'std_rate']
+        period_stats = period_stats.reset_index()
+        period_stats = period_stats.dropna()
+        
+        if period_stats.empty:
+            return create_empty_rate_chart("No period data available for comparison", flow_direction)
+            
+        fig.add_trace(go.Bar(
+            x=period_stats['period_name'],
+            y=period_stats['avg_rate'],
+            name='Average Rate',
+            marker_color=colors['primary'],
+            error_y=dict(
+                type='data',
+                symmetric=False,
+                array=period_stats['max_rate'] - period_stats['avg_rate'],
+                arrayminus=period_stats['avg_rate'] - period_stats['min_rate']
+            ),
+            hovertemplate='<b>%{y:.2f}p/kWh</b><br>Min: %{customdata[0]:.2f}p<br>Max: %{customdata[1]:.2f}p<br>Std: %{customdata[2]:.2f}p<extra></extra>',
+            customdata=period_stats[['min_rate', 'max_rate', 'std_rate']].values
+        ))
+        
+        fig.update_layout(
+            title='Rate Statistics by Tariff Period',
+            xaxis_title='Tariff Period',
+            yaxis_title='Rate (pence/kWh)',
+            height=500
+        )
+    
+    # Common layout updates
+    fig.update_layout(
+        plot_bgcolor='white',
+        paper_bgcolor='white',
+        font=dict(size=12),
+        margin=dict(l=60, r=30, t=60, b=40),
+        hovermode='x unified'
+    )
+    
+    fig.update_xaxes(gridcolor='lightgray', gridwidth=1)
+    fig.update_yaxes(gridcolor='lightgray', gridwidth=1)
     
     return fig
 

@@ -8,6 +8,7 @@ import os
 from datetime import datetime, date
 from typing import Dict, Any
 import json
+import sys
 
 
 def setup_logging(log_level: str = "INFO", log_dir: str = "logs") -> None:
@@ -44,20 +45,32 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs") -> None:
     console_handler.setFormatter(simple_formatter)
     root_logger.addHandler(console_handler)
     
-    # Main application log (rotating file)
+    # Helper function to create safe rotating handler
+    def create_safe_handler(filename, max_bytes=10*1024*1024, backup_count=5):
+        """Create a rotating file handler that's safer on Windows."""
+        try:
+            # Use TimedRotatingFileHandler instead for better Windows compatibility
+            handler = logging.handlers.TimedRotatingFileHandler(
+                filename, when='midnight', interval=1, backupCount=backup_count,
+                encoding='utf-8', delay=True
+            )
+            # Set size-based rotation as well if needed
+            handler.maxBytes = max_bytes
+            return handler
+        except Exception:
+            # Fallback to basic file handler if rotation fails
+            return logging.FileHandler(filename, encoding='utf-8', delay=True)
+    
+    # Main application log
     app_log_file = os.path.join(log_dir, 'tariff_tracker.log')
-    app_handler = logging.handlers.RotatingFileHandler(
-        app_log_file, maxBytes=10*1024*1024, backupCount=5
-    )
+    app_handler = create_safe_handler(app_log_file)
     app_handler.setLevel(logging.DEBUG)
     app_handler.setFormatter(detailed_formatter)
     root_logger.addHandler(app_handler)
     
     # API-specific log
     api_log_file = os.path.join(log_dir, 'api_calls.log')
-    api_handler = logging.handlers.RotatingFileHandler(
-        api_log_file, maxBytes=5*1024*1024, backupCount=3
-    )
+    api_handler = create_safe_handler(api_log_file, max_bytes=5*1024*1024, backup_count=3)
     api_handler.setLevel(logging.DEBUG)
     api_handler.setFormatter(detailed_formatter)
     
@@ -68,9 +81,7 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs") -> None:
     
     # Timeline operations log
     timeline_log_file = os.path.join(log_dir, 'timeline_operations.log')
-    timeline_handler = logging.handlers.RotatingFileHandler(
-        timeline_log_file, maxBytes=5*1024*1024, backupCount=3
-    )
+    timeline_handler = create_safe_handler(timeline_log_file, max_bytes=5*1024*1024, backup_count=3)
     timeline_handler.setLevel(logging.DEBUG)
     timeline_handler.setFormatter(detailed_formatter)
     
@@ -81,18 +92,14 @@ def setup_logging(log_level: str = "INFO", log_dir: str = "logs") -> None:
     
     # Error-only log for critical issues
     error_log_file = os.path.join(log_dir, 'errors.log')
-    error_handler = logging.handlers.RotatingFileHandler(
-        error_log_file, maxBytes=5*1024*1024, backupCount=5
-    )
+    error_handler = create_safe_handler(error_log_file, max_bytes=5*1024*1024, backup_count=5)
     error_handler.setLevel(logging.ERROR)
     error_handler.setFormatter(detailed_formatter)
     root_logger.addHandler(error_handler)
     
     # Performance log for timing operations
     perf_log_file = os.path.join(log_dir, 'performance.log')
-    perf_handler = logging.handlers.RotatingFileHandler(
-        perf_log_file, maxBytes=5*1024*1024, backupCount=3
-    )
+    perf_handler = create_safe_handler(perf_log_file, max_bytes=5*1024*1024, backup_count=3)
     perf_handler.setLevel(logging.INFO)
     perf_handler.setFormatter(detailed_formatter)
     
