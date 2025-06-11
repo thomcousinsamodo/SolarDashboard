@@ -141,16 +141,43 @@ def run_example():
     test_date = datetime(2025, 1, 1, 12, 0, 0)
     import_rate = manager.get_rate_at_datetime(test_date, FlowDirection.IMPORT)
     if import_rate:
-        print(f"Import rate at {test_date}: {import_rate.value_inc_vat:.4f}p/kWh (valid from {import_rate.valid_from})")
+        print(f"Import rate at {test_date}: {import_rate.value_inc_vat:.4f}p/kWh ({import_rate.rate_type} rate, valid from {import_rate.valid_from})")
     else:
         print(f"No import rate found for {test_date}")
     
     # Look up current export rate
     export_rate = manager.get_rate_at_datetime(test_date, FlowDirection.EXPORT)
     if export_rate:
-        print(f"Export rate at {test_date}: {export_rate.value_inc_vat:.4f}p/kWh (valid from {export_rate.valid_from})")
+        print(f"Export rate at {test_date}: {export_rate.value_inc_vat:.4f}p/kWh ({export_rate.rate_type} rate, valid from {export_rate.valid_from})")
     else:
         print(f"No export rate found for {test_date}")
+    
+    # Demo automatic Economy 7 rate detection with different times
+    print("\nDemo: Automatic Economy 7 rate detection:")
+    economy7_times = [
+        datetime(2024, 1, 1, 2, 0, 0),   # 02:00 - Night rate
+        datetime(2024, 1, 1, 14, 0, 0),  # 14:00 - Day rate  
+        datetime(2024, 1, 1, 0, 45, 0),  # 00:45 - Night rate
+        datetime(2024, 1, 1, 7, 15, 0),  # 07:15 - Night rate
+        datetime(2024, 1, 1, 8, 0, 0),   # 08:00 - Day rate
+    ]
+    
+    for test_time in economy7_times:
+        # This will auto-detect night vs day based on time
+        rate = manager.get_rate_at_datetime(test_time, FlowDirection.IMPORT)
+        if rate:
+            print(f"  {test_time.strftime('%H:%M')}: {rate.rate_type} rate detected")
+        else:
+            # Show what would be detected even without Economy 7 tariff
+            from .models import TariffType, TariffPeriod
+            dummy_period = TariffPeriod(
+                start_date=test_time.date(), end_date=None, 
+                product_code="dummy", tariff_code="dummy", 
+                display_name="dummy", tariff_type=TariffType.ECONOMY7,
+                flow_direction=FlowDirection.IMPORT, region="C"
+            )
+            detected_type = manager._determine_rate_type(test_time, dummy_period)
+            print(f"  {test_time.strftime('%H:%M')}: {detected_type} rate would be detected (no Economy 7 tariff active)")
     
     # Example 6: Timeline validation
     print("\n6. Timeline Validation:")

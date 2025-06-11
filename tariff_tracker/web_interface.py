@@ -47,8 +47,7 @@ def main():
                             help='DateTime in ISO format (YYYY-MM-DDTHH:MM:SS)')
     rate_parser.add_argument('--flow', choices=['import', 'export'], default='import',
                            help='Flow direction')
-    rate_parser.add_argument('--type', default='standard', 
-                           help='Rate type (standard, day, night)')
+    # Note: Rate type is now automatically determined based on time and tariff type
     
     args = parser.parse_args()
     
@@ -219,15 +218,15 @@ def lookup_rate(manager, args):
         dt = datetime.fromisoformat(args.datetime)
         flow_direction = FlowDirection(args.flow)
         
-        rate = manager.get_rate_at_datetime(dt, flow_direction, args.type)
+        rate = manager.get_rate_at_datetime(dt, flow_direction)  # Auto-detect rate type
         
         if rate is None:
-            print(f"No rate found for {args.datetime} ({args.flow}, {args.type})")
+            print(f"No rate found for {args.datetime} ({args.flow})")
         else:
             print(f"Rate for {args.datetime}:")
             print(f"  Flow: {args.flow}")
-            print(f"  Type: {args.type}")
-            print(f"  Rate: {rate:.4f} pence/kWh (inc VAT)")
+            print(f"  Type: {rate.rate_type} (auto-detected)")
+            print(f"  Rate: {rate.value_inc_vat:.4f} pence/kWh (inc VAT)")
         
     except Exception as e:
         print(f"Error looking up rate: {e}")

@@ -277,4 +277,71 @@ class OctopusAPIClient:
         return {
             'day': day_rates,
             'night': night_rates
-        } 
+        }
+    
+    def detect_tariff_type(self, product_code: str, tariff_code: str = None, region: str = "C") -> str:
+        """Detect the tariff type using efficient pattern matching with selective API testing.
+        
+        Args:
+            product_code: Product code to test
+            tariff_code: Optional full tariff code, will be built if not provided
+            region: Region code for building tariff code
+            
+        Returns:
+            Detected tariff type: 'economy7', 'agile', 'go', 'fixed', or 'variable'
+        """
+        try:
+            product_lower = product_code.lower()
+            
+            # Fast pattern matching for obvious cases
+            if "agile" in product_lower:
+                return "agile"
+            elif "go" in product_lower and ("octopus-go" in product_lower or product_lower.startswith("go-")):
+                return "go"
+            elif "fix" in product_lower or "fixed" in product_lower:
+                return "fixed"
+            elif "var" in product_lower or "flexible" in product_lower:
+                return "variable"
+            
+            # Check for specific Economy 7 patterns
+            economy7_patterns = ["eco7", "economy7", "economy-7", "dual", "2-rate", "two-rate"]
+            if any(pattern in product_lower for pattern in economy7_patterns):
+                return "economy7"
+            
+            # For ambiguous cases, do selective API testing
+            # Only test if we can't determine from pattern matching
+            if not tariff_code:
+                tariff_code = self.build_tariff_code(product_code, region=region)
+            
+            test_from = "2024-01-01T00:00:00Z"
+            test_to = "2024-01-02T00:00:00Z"
+            
+            # Quick test for Economy 7 (only if pattern didn't already identify it)
+            try:
+                day_rates = self.get_tariff_rates(product_code, tariff_code, test_from, test_to, "day-unit-rates")
+                if len(day_rates) > 0:
+                    # If day rates exist, check night rates too
+                    try:
+                        night_rates = self.get_tariff_rates(product_code, tariff_code, test_from, test_to, "night-unit-rates")
+                        if len(night_rates) > 0:
+                            return "economy7"
+                    except:
+                        pass
+            except:
+                pass
+            
+            # Default to variable for most modern tariffs
+            return "variable"
+                    
+        except Exception as e:
+            self.logger.warning(f"Could not detect tariff type for {product_code}: {e}")
+            # Fallback to pattern matching only
+            product_lower = product_code.lower()
+            if "agile" in product_lower:
+                return "agile"
+            elif "go" in product_lower:
+                return "go"
+            elif "fix" in product_lower:
+                return "fixed"
+            else:
+                return "variable" 

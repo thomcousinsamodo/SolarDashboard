@@ -101,6 +101,26 @@ class TimelineManager:
     
     def fetch_rates_for_period(self, period: TariffPeriod) -> None:
         """Fetch rate data from the API for a tariff period."""
+        # Check if this is an export period - API doesn't provide export tariff data
+        if period.flow_direction == FlowDirection.EXPORT:
+            self.logger.warning(f"Export tariffs are not available via API - manual entry required for {period.display_name}")
+            period.last_updated = datetime.now()
+            
+            period_data = {
+                'display_name': period.display_name,
+                'product_code': period.product_code,
+                'tariff_type': period.tariff_type.value,
+                'flow_direction': period.flow_direction.value,
+                'start_date': period.start_date,
+                'end_date': period.end_date
+            }
+            
+            self.structured_logger.log_period_operation(
+                'fetch_rates', period_data, success=True, rates_fetched=0, 
+                error="Export tariffs not available via API"
+            )
+            return
+        
         fetch_start = period.start_date
         fetch_end = period.end_date or date.today()
         
@@ -257,18 +277,34 @@ class TimelineManager:
             print(f"Error fetching standing charges: {e}")
     
     def get_rate_at_datetime(self, dt: datetime, flow_direction: FlowDirection, 
-                           rate_type: str = "standard") -> Optional['TariffRate']:
-        """Get the rate that was active at a specific datetime."""
+                           rate_type: str = None) -> Optional['TariffRate']:
+        """Get the rate that was active at a specific datetime.
+        
+        Args:
+            dt: The datetime to lookup
+            flow_direction: Import or export
+            rate_type: Optional - if None, will be automatically determined
+        """
+        from datetime import timezone
+        
+        # Ensure dt is timezone-aware (assume UTC if naive)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
         timeline = (self.config.import_timeline if flow_direction == FlowDirection.IMPORT 
                    else self.config.export_timeline)
         
         period = timeline.get_period_at_date(dt.date())
         if not period:
             self.structured_logger.log_rate_lookup(
-                dt.isoformat(), flow_direction.value, rate_type, None, None
+                dt.isoformat(), flow_direction.value, rate_type or "auto", None, None
             )
             self.logger.debug(f"No period found for {dt.date()} in {flow_direction.value} timeline")
             return None
+        
+        # Auto-determine rate type if not specified
+        if rate_type is None:
+            rate_type = self._determine_rate_type(dt, period)
         
         rate = period.get_rate_at_time(dt, rate_type)
         rate_value = rate.value_inc_vat if rate else None
@@ -278,11 +314,29 @@ class TimelineManager:
         )
         
         if rate:
-            self.logger.debug(f"Found rate {rate_value}p/kWh for {dt} in period {period.display_name}")
+            self.logger.debug(f"Found {rate_type} rate {rate_value}p/kWh for {dt} in period {period.display_name}")
         else:
-            self.logger.debug(f"No rate found for {dt} in period {period.display_name}")
+            self.logger.debug(f"No {rate_type} rate found for {dt} in period {period.display_name}")
         
         return rate
+    
+    def _determine_rate_type(self, dt: datetime, period: TariffPeriod) -> str:
+        """Determine the appropriate rate type based on datetime and tariff period."""
+        if period.tariff_type == TariffType.ECONOMY7:
+            # Economy 7: Check time to determine day/night
+            # Typical Economy 7 night hours: 00:30-07:30 (but can vary by region)
+            # For simplicity, using standard 00:30-07:30 UK pattern
+            hour = dt.hour
+            minute = dt.minute
+            
+            # Night rate: 00:30 to 07:30
+            if (hour == 0 and minute >= 30) or (1 <= hour < 7) or (hour == 7 and minute < 30):
+                return "night"
+            else:
+                return "day"
+        else:
+            # All other tariff types use standard rates
+            return "standard"
     
     def get_timeline_summary(self) -> Dict:
         """Get a summary of the configured timelines."""
@@ -317,3 +371,140 @@ class TimelineManager:
     def search_available_products(self, search_term: str) -> List[Dict]:
         """Search for available Octopus products."""
         return self.api_client.search_products_by_name(search_term)
+    
+    def refresh_all_rates(self) -> None:
+        """Refresh rates for all periods in both timelines."""
+        self.logger.info("Starting refresh of all rates")
+        
+        # Refresh import timeline
+        for period in self.config.import_timeline.periods:
+            try:
+                self.fetch_rates_for_period(period)
+                self.logger.info(f"Refreshed rates for import period: {period.display_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to refresh rates for import period {period.display_name}: {e}")
+        
+        # Refresh export timeline
+        for period in self.config.export_timeline.periods:
+            try:
+                self.fetch_rates_for_period(period)
+                self.logger.info(f"Refreshed rates for export period: {period.display_name}")
+            except Exception as e:
+                self.logger.error(f"Failed to refresh rates for export period {period.display_name}: {e}")
+        
+        self.save_config()
+        self.logger.info("Completed refresh of all rates")
+    
+    def delete_period(self, flow_direction: FlowDirection, period_index: int) -> bool:
+        """Delete a period from the specified timeline."""
+        timeline = (self.config.import_timeline if flow_direction == FlowDirection.IMPORT 
+                   else self.config.export_timeline)
+        
+        if 0 <= period_index < len(timeline.periods):
+            deleted_period = timeline.periods.pop(period_index)
+            
+            # Log the deletion
+            period_data = {
+                'flow_direction': flow_direction.value,
+                'period_index': period_index,
+                'display_name': deleted_period.display_name,
+                'product_code': deleted_period.product_code
+            }
+            
+            self.structured_logger.log_period_operation(
+                'delete_period', period_data, success=True
+            )
+            
+            self.logger.info(f"Deleted {flow_direction.value} period: {deleted_period.display_name}")
+            self.save_config()
+            return True
+        else:
+            self.logger.error(f"Invalid period index {period_index} for {flow_direction.value} timeline")
+            return False
+    
+    def get_period_by_index(self, flow_direction: FlowDirection, period_index: int) -> Optional[TariffPeriod]:
+        """Get a period by its index in the timeline."""
+        timeline = (self.config.import_timeline if flow_direction == FlowDirection.IMPORT 
+                   else self.config.export_timeline)
+        
+        if 0 <= period_index < len(timeline.periods):
+            return timeline.periods[period_index]
+        return None
+    
+    def store_manual_economy7_rates(self, period: TariffPeriod, manual_rates: Dict) -> None:
+        """Store manually entered Economy 7 rates and standing charges."""
+        if period.tariff_type != TariffType.ECONOMY7:
+            raise ValueError("Manual Economy 7 rates can only be stored for Economy 7 periods")
+        
+        self._store_manual_rates(period, manual_rates, is_economy7=True)
+    
+    def store_manual_export_rates(self, period: TariffPeriod, manual_rates: Dict) -> None:
+        """Store manually entered export rates and standing charges."""
+        if period.flow_direction != FlowDirection.EXPORT:
+            raise ValueError("Manual export rates can only be stored for export periods")
+        
+        self._store_manual_rates(period, manual_rates, is_economy7=False)
+    
+    def _store_manual_rates(self, period: TariffPeriod, manual_rates: Dict, is_economy7: bool = False) -> None:
+        """Internal method to store manual rates (Economy 7 or export)."""
+        from datetime import timezone
+        
+        # Clear existing rates and charges
+        period.rates.clear()
+        period.standing_charges.clear()
+        
+        # Create date range for the period (timezone-aware)
+        start_datetime = datetime.combine(period.start_date, datetime.min.time()).replace(tzinfo=timezone.utc)
+        end_datetime = datetime.combine(
+            period.end_date or date.today(), 
+            datetime.max.time()
+        ).replace(tzinfo=timezone.utc) if period.end_date else None
+        
+        if is_economy7:
+            # Create day and night rates for Economy 7
+            day_rate = TariffRate(
+                valid_from=start_datetime,
+                valid_to=end_datetime,
+                value_exc_vat=manual_rates['day_rate_exc_vat'],
+                value_inc_vat=manual_rates['day_rate_inc_vat'],
+                rate_type="day"
+            )
+            period.rates.append(day_rate)
+            
+            night_rate = TariffRate(
+                valid_from=start_datetime,
+                valid_to=end_datetime,
+                value_exc_vat=manual_rates['night_rate_exc_vat'],
+                value_inc_vat=manual_rates['night_rate_inc_vat'],
+                rate_type="night"
+            )
+            period.rates.append(night_rate)
+            
+            log_msg = f"Day={manual_rates['day_rate_inc_vat']:.3f}p, Night={manual_rates['night_rate_inc_vat']:.3f}p"
+        else:
+            # Create single rate for export tariffs
+            export_rate = TariffRate(
+                valid_from=start_datetime,
+                valid_to=end_datetime,
+                value_exc_vat=manual_rates.get('export_rate_exc_vat', manual_rates.get('day_rate_exc_vat', 0)),
+                value_inc_vat=manual_rates.get('export_rate_inc_vat', manual_rates.get('day_rate_inc_vat', 0)),
+                rate_type="standard"
+            )
+            period.rates.append(export_rate)
+            
+            log_msg = f"Export={manual_rates.get('export_rate_inc_vat', manual_rates.get('day_rate_inc_vat', 0)):.3f}p"
+        
+        # Create standing charge
+        standing_charge = StandingCharge(
+            valid_from=start_datetime,
+            valid_to=end_datetime,
+            value_exc_vat=manual_rates['standing_charge_exc_vat'],
+            value_inc_vat=manual_rates['standing_charge_inc_vat']
+        )
+        period.standing_charges.append(standing_charge)
+        
+        # Update last updated timestamp
+        period.last_updated = datetime.now()
+        
+        tariff_type = "Economy 7" if is_economy7 else "export"
+        self.logger.info(f"Stored manual {tariff_type} rates for {period.display_name}: {log_msg}, SC={manual_rates['standing_charge_inc_vat']:.3f}p")

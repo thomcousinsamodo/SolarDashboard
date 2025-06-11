@@ -1,0 +1,47 @@
+{
+  "import_timeline": {
+    "flow_direction": "import",
+    "periods": [
+      {
+        "start_date": "2023-03-05",
+        "end_date": "2023-04-04",
+        "product_code": "MANUAL-ECONOMY7-2025-06-11",
+        "tariff_code": "E-1R-MANUAL-ECONOMY7-2025-06-11-B",
+        "display_name": "Outgoing Octopus Apr-May '23",
+        "tariff_type": "economy7",
+        "flow_direction": "import",
+        "region": "B",
+        "rates": [
+          {
+            "valid_from": "2023-03-05T00:00:00+00:00",
+            "valid_to": "2023-04-04T23:59:59.999999+00:00",
+            "value_exc_vat": 0.5700999999999999,
+            "value_inc_vat": 0.59861,
+            "rate_type": "day"
+          },
+          {
+            "valid_from": "2023-03-05T00:00:00+00:00",
+            "valid_to": "2023-04-04T23:59:59.999999+00:00",
+            "value_exc_vat": 0.32549999999999996,
+            "value_inc_vat": 0.34178,
+            "rate_type": "night"
+          }
+        ],
+        "standing_charges": [
+          {
+            "valid_from": "2023-03-05T00:00:00+00:00",
+            "valid_to": "2023-04-04T23:59:59.999999+00:00",
+            "value_exc_vat": 0.4644,
+            "value_inc_vat": 0.48762
+          }
+        ],
+        "notes": "",
+        "last_updated": "2025-06-11T15:39:39.655977"
+      }
+    ]
+  },
+  "export_timeline": {
+    "flow_direction": "export",
+    "periods": []
+  }
+}
