@@ -1,0 +1,247 @@
+{
+  "account_number": "A-AFDADE77",
+  "tariff_periods": [
+    {
+      "start_date": "2023-04-05",
+      "end_date": "2023-05-04",
+      "tariff_code": "E-1R-FLEXIBLE-BB-23-05-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 57.01,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 32.55,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.44,
+      "notes": "Price Guarantee discounts applied"
+    },
+    {
+      "start_date": "2023-05-05",
+      "end_date": "2023-06-04",
+      "tariff_code": "E-1R-FLEXIBLE-BB-23-05-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 59.86,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 34.18,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.44,
+      "notes": "Price Guarantee discounts applied"
+    },
+    {
+      "start_date": "2023-06-05",
+      "end_date": "2023-06-30",
+      "tariff_code": "E-1R-FLEXIBLE-BB-23-05-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 57.01,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 32.55,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.44,
+      "notes": "Price Guarantee discounts applied"
+    },
+    {
+      "start_date": "2023-07-01",
+      "end_date": "2023-09-30",
+      "tariff_code": "E-1R-FLEXIBLE-BB-23-08-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 35.04,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 15.62,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.44,
+      "notes": "New, lower rate from July"
+    },
+    {
+      "start_date": "2023-10-01",
+      "end_date": "2023-12-31",
+      "tariff_code": "E-1R-FLEXIBLE-BB-23-11-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 32.0,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 14.27,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.44,
+      "notes": "New, lower rate from October; Confirmed from bill data"
+    },
+    {
+      "start_date": "2024-01-01",
+      "end_date": "2024-03-31",
+      "tariff_code": "E-1R-FLEXIBLE-BB-24-02-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 33.67,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 15.01,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 46.43,
+      "notes": "Rate increase in January 2024"
+    },
+    {
+      "start_date": "2024-04-01",
+      "end_date": "2024-06-30",
+      "tariff_code": "E-1R-FLEXIBLE-BB-24-05-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 28.05,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 12.5,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 51.1,
+      "notes": "New lower rate from April; Tariff continued from April"
+    },
+    {
+      "start_date": "2024-07-01",
+      "end_date": "2024-09-30",
+      "tariff_code": "E-1R-FLEXIBLE-BB-24-08-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 25.29,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 11.27,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 51.1,
+      "notes": "New lower rate from July"
+    },
+    {
+      "start_date": "2024-10-01",
+      "end_date": "2024-12-31",
+      "tariff_code": "E-1R-FLEXIBLE-BB-24-11-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 28.13,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 12.54,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 51.97,
+      "notes": "New rate in October; From Nov 2024 bill data; From Dec 2024 bill data; Pre-Jan rate period"
+    },
+    {
+      "start_date": "2025-01-01",
+      "end_date": "2025-01-04",
+      "tariff_code": "E-1R-FLEXIBLE-BB-25-02-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 28.72,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 12.8,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 51.97,
+      "notes": "New January rate adjustment"
+    },
+    {
+      "start_date": "2025-01-05",
+      "end_date": "2025-05-04",
+      "tariff_code": "E-1R-FLEXIBLE-BB-25-02-08-C",
+      "rate_type": "time_of_use",
+      "time_of_use_rates": [
+        {
+          "rate_name": "Day",
+          "rate_pence_per_kwh": 31.28,
+          "start_time": "07:00",
+          "end_time": "23:00"
+        },
+        {
+          "rate_name": "Night",
+          "rate_pence_per_kwh": 13.94,
+          "start_time": "23:00",
+          "end_time": "07:00"
+        }
+      ],
+      "standing_charge_pence_per_day": 45.45,
+      "notes": "From Feb 2025 bill"
+    }
+  ]
+}
