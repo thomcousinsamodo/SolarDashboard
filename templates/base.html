@@ -21,8 +21,10 @@
             border: 1px solid rgba(0, 0, 0, 0.125);
         }
         .metric-card {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
+            transition: transform 0.2s;
+        }
+        .metric-card:hover {
+            transform: translateY(-2px);
         }
         .metric-card .card-body {
             padding: 1.5rem;
@@ -93,6 +95,11 @@
                     <li class="nav-item">
                         <a class="nav-link {% if request.endpoint == 'solar_dashboard' %}active{% endif %}" href="{{ url_for('solar_dashboard') }}">
                             <i class="fas fa-solar-panel me-1"></i>Solar Energy
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'spending_dashboard' %}active{% endif %}" href="{{ url_for('spending_dashboard') }}">
+                            <i class="fas fa-pound-sign me-1"></i>Spending
                         </a>
                     </li>
                     {% if tariff_available|default(false) %}

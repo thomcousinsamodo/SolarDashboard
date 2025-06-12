@@ -209,8 +209,12 @@ def index():
     daily_df = solar_data['daily']
     solar_data_available = not daily_df.empty
     
+    # Get spending stats with comparisons
+    spending_stats = get_dashboard_spending_stats()
+    
     return render_template('index.html', 
                          solar_stats=solar_stats, 
+                         spending_stats=spending_stats,
                          tariff_summary=tariff_summary,
                          tariff_available=TARIFF_AVAILABLE,
                          solar_data_available=solar_data_available,
@@ -328,6 +332,114 @@ def get_dashboard_solar_stats():
     
     return type('SolarStats', (), enhanced_stats)()
 
+def get_dashboard_spending_stats():
+    """Get spending stats for the main dashboard with weekly focus and comparisons."""
+    from datetime import datetime, timedelta
+    from spending_dashboard import load_spending_data, calculate_spending_summary
+    
+    try:
+        # Get date ranges
+        today = datetime.now().date()
+        
+        # Current week (last 7 days)
+        week_start = today - timedelta(days=6)  # 7 days including today
+        current_week_start = week_start.strftime('%Y-%m-%d')
+        current_week_end = today.strftime('%Y-%m-%d')
+        
+        # Previous week (7 days before current week)
+        prev_week_start = week_start - timedelta(days=7)
+        prev_week_end = week_start - timedelta(days=1)
+        prev_week_start_str = prev_week_start.strftime('%Y-%m-%d')
+        prev_week_end_str = prev_week_end.strftime('%Y-%m-%d')
+        
+        # Load spending data for both periods
+        current_week_df = load_spending_data(current_week_start, current_week_end)
+        prev_week_df = load_spending_data(prev_week_start_str, prev_week_end_str)
+        
+        # Calculate summaries
+        current_summary = calculate_spending_summary(current_week_df) if not current_week_df.empty else create_empty_spending_stats()
+        prev_summary = calculate_spending_summary(prev_week_df) if not prev_week_df.empty else create_empty_spending_stats()
+        
+        # Calculate comparisons
+        def calculate_comparison(current, previous):
+            if previous == 0:
+                return 0
+            return ((current - previous) / previous) * 100
+        
+        # Week vs previous week comparisons
+        import_cost_change = calculate_comparison(
+            current_summary.total_import_cost if hasattr(current_summary, 'total_import_cost') else current_summary['total_import_cost'],
+            prev_summary.total_import_cost if hasattr(prev_summary, 'total_import_cost') else prev_summary['total_import_cost']
+        )
+        export_earnings_change = calculate_comparison(
+            current_summary.total_export_earnings if hasattr(current_summary, 'total_export_earnings') else current_summary['total_export_earnings'],
+            prev_summary.total_export_earnings if hasattr(prev_summary, 'total_export_earnings') else prev_summary['total_export_earnings']
+        )
+        net_cost_change = calculate_comparison(
+            abs(current_summary.net_cost if hasattr(current_summary, 'net_cost') else current_summary['net_cost']),
+            abs(prev_summary.net_cost if hasattr(prev_summary, 'net_cost') else prev_summary['net_cost'])
+        )
+        
+        # Create enhanced stats object
+        enhanced_stats = {
+            # Current week totals
+            'total_import_cost': current_summary.total_import_cost if hasattr(current_summary, 'total_import_cost') else current_summary['total_import_cost'],
+            'total_export_earnings': current_summary.total_export_earnings if hasattr(current_summary, 'total_export_earnings') else current_summary['total_export_earnings'],
+            'net_cost': current_summary.net_cost if hasattr(current_summary, 'net_cost') else current_summary['net_cost'],
+            'total_standing_charges': current_summary.total_standing_charges if hasattr(current_summary, 'total_standing_charges') else current_summary['total_standing_charges'],
+            'period_days': current_summary.period_days if hasattr(current_summary, 'period_days') else current_summary['period_days'],
+            
+            # Daily averages
+            'avg_daily_cost': (current_summary.total_import_cost if hasattr(current_summary, 'total_import_cost') else current_summary['total_import_cost']) / max(1, (current_summary.period_days if hasattr(current_summary, 'period_days') else current_summary['period_days'])),
+            'avg_daily_earnings': (current_summary.total_export_earnings if hasattr(current_summary, 'total_export_earnings') else current_summary['total_export_earnings']) / max(1, (current_summary.period_days if hasattr(current_summary, 'period_days') else current_summary['period_days'])),
+            'avg_daily_net': abs(current_summary.net_cost if hasattr(current_summary, 'net_cost') else current_summary['net_cost']) / max(1, (current_summary.period_days if hasattr(current_summary, 'period_days') else current_summary['period_days'])),
+            
+            # Comparisons
+            'import_cost_change': import_cost_change,
+            'export_earnings_change': export_earnings_change,
+            'net_cost_change': net_cost_change,
+            
+            # Period info
+            'period_name': "Last 7 Days",
+            'period_start': week_start.strftime('%b %d'),
+            'period_end': today.strftime('%b %d'),
+            'data_days': len(current_week_df) if not current_week_df.empty else 0,
+            
+            # Data availability flags
+            'has_prev_week': not prev_week_df.empty,
+            'has_current_data': not current_week_df.empty,
+            'net_is_cost': (current_summary.net_cost if hasattr(current_summary, 'net_cost') else current_summary['net_cost']) > 0
+        }
+        
+        return type('SpendingStats', (), enhanced_stats)()
+        
+    except Exception as e:
+        print(f"Error getting spending stats: {e}")
+        return create_empty_spending_stats()
+
+def create_empty_spending_stats():
+    """Create empty spending stats when no data is available."""
+    return type('SpendingStats', (), {
+        'total_import_cost': 0,
+        'total_export_earnings': 0,
+        'net_cost': 0,
+        'total_standing_charges': 0,
+        'period_days': 0,
+        'avg_daily_cost': 0,
+        'avg_daily_earnings': 0,
+        'avg_daily_net': 0,
+        'import_cost_change': 0,
+        'export_earnings_change': 0,
+        'net_cost_change': 0,
+        'period_name': "No Data",
+        'period_start': "",
+        'period_end': "",
+        'data_days': 0,
+        'has_prev_week': False,
+        'has_current_data': False,
+        'net_is_cost': True
+    })()
+
 def create_empty_solar_stats():
     """Create empty solar stats when no data is available."""
     return type('SolarStats', (), {
@@ -390,6 +502,47 @@ def solar_dashboard():
                          data_min_date=data_min_date,
                          data_max_date=data_max_date,
                          tariff_available=TARIFF_AVAILABLE)
+
+@app.route('/spending')
+def spending_dashboard():
+    """Spending dashboard page."""
+    # Import spending functions from spending_dashboard.py
+    from spending_dashboard import load_spending_data, calculate_spending_summary
+    from datetime import datetime, timedelta
+    
+    # Check if solar data is available for nav menu
+    solar_data = load_solar_data()
+    daily_df = solar_data['daily']
+    solar_data_available = not daily_df.empty
+    
+    # Check if tariff data is available for nav menu
+    mgr = get_manager()
+    summary = mgr.get_timeline_summary()
+    tariff_available = summary['import_periods'] > 0 or summary['export_periods'] > 0
+    
+    # Default to last 30 days
+    end_date = datetime.now()
+    start_date = end_date - timedelta(days=30)
+    
+    # Load spending data
+    spending_df = load_spending_data(
+        start_date=start_date.strftime('%Y-%m-%d'),
+        end_date=end_date.strftime('%Y-%m-%d')
+    )
+    
+    # Calculate summary
+    spending_summary = calculate_spending_summary(spending_df)
+    
+    # Check if we have data
+    has_data = not spending_df.empty
+    
+    return render_template('spending_integrated.html', 
+                         summary=spending_summary,
+                         has_data=has_data,
+                         start_date=start_date.strftime('%Y-%m-%d'),
+                         end_date=end_date.strftime('%Y-%m-%d'),
+                         tariff_available=tariff_available,
+                         solar_data_available=solar_data_available)
 
 @app.route('/api/solar-chart', methods=['POST'])
 def api_solar_chart():
@@ -507,6 +660,54 @@ def api_solar_summary():
         
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 400
+
+@app.route('/api/spending-charts', methods=['POST'])
+def api_spending_charts():
+    """API endpoint to get spending charts."""
+    try:
+        # Import spending functions from spending_dashboard.py
+        from spending_dashboard import load_spending_data, calculate_spending_summary, create_spending_timeline_chart, create_hourly_spending_chart, create_hourly_price_usage_chart
+        
+        data = request.get_json()
+        start_date = data.get('start_date')
+        end_date = data.get('end_date')
+        
+        # Get chart options
+        show_markers = data.get('show_markers', True)
+        fill_areas = data.get('fill_areas', True)
+        
+        # Load spending data
+        spending_df = load_spending_data(start_date, end_date)
+        
+        if spending_df.empty:
+            return jsonify({
+                'success': False,
+                'message': 'No spending data found for the selected period'
+            })
+        
+        # Create charts with options
+        timeline_chart = create_spending_timeline_chart(spending_df, show_markers=show_markers, fill_areas=fill_areas)
+        hourly_chart = create_hourly_spending_chart(spending_df)
+        hourly_price_usage_chart = create_hourly_price_usage_chart(spending_df)
+        
+        # Calculate updated summary
+        summary = calculate_spending_summary(spending_df)
+        
+        return jsonify({
+            'success': True,
+            'charts': {
+                'timeline': timeline_chart,
+                'hourly': hourly_chart,
+                'hourly_price_usage': hourly_price_usage_chart
+            },
+            'summary': summary
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 # Tariff management routes (only if available)
 if TARIFF_AVAILABLE:

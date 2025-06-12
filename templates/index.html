@@ -11,19 +11,7 @@
                 <i class="fas fa-tachometer-alt me-3"></i>
                 Energy Dashboard
             </h1>
-            <div>
-                <a href="/solar" class="btn btn-outline-primary me-2">
-                    <i class="fas fa-solar-panel me-1"></i>Solar Details
-                </a>
-                {% if tariff_available %}
-                <a href="/tariffs" class="btn btn-outline-info me-2">
-                    <i class="fas fa-calculator me-1"></i>Tariff Tracker
-                </a>
-                {% endif %}
-                <a href="http://localhost:5001" class="btn btn-outline-success" target="_blank">
-                    <i class="fas fa-pound-sign me-1"></i>Spending Dashboard
-                </a>
-            </div>
+
         </div>
         <p class="lead text-muted">Comprehensive overview of your solar energy and tariff management</p>
     </div>
@@ -340,6 +328,152 @@
                             <small class="text-muted">Lifetime Total Export</small>
                             <strong class="text-warning">{{ "%.0f"|format(solar_stats.lifetime_total_export) }} kWh</strong>
                             <small class="text-muted">since data began</small>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if spending_stats.has_current_data %}
+<!-- Spending Overview -->
+<div class="row mb-4">
+    <div class="col-12">
+        <h3><i class="fas fa-pound-sign me-2 text-success"></i>Energy Spending Overview - {{ spending_stats.period_name }}</h3>
+        <p class="text-muted">{{ spending_stats.period_start }} to {{ spending_stats.period_end }} ({{ spending_stats.data_days }} days of data)</p>
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-danger text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">£{{ "%.2f"|format(spending_stats.total_import_cost) }}</h4>
+                <p class="metric-label mb-1">Weekly Import Cost</p>
+                <small>£{{ "%.2f"|format(spending_stats.avg_daily_cost) }}/day avg</small>
+                {% if spending_stats.has_prev_week %}
+                <div class="mt-1">
+                    {% if spending_stats.import_cost_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-up"></i> +{{ "%.1f"|format(spending_stats.import_cost_change) }}% vs last week
+                        </small>
+                    {% elif spending_stats.import_cost_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-down"></i> {{ "%.1f"|format(spending_stats.import_cost_change) }}% vs last week
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last week</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">£{{ "%.2f"|format(spending_stats.total_export_earnings) }}</h4>
+                <p class="metric-label mb-1">Weekly Export Earnings</p>
+                <small>£{{ "%.2f"|format(spending_stats.avg_daily_earnings) }}/day avg</small>
+                {% if spending_stats.has_prev_week %}
+                <div class="mt-1">
+                    {% if spending_stats.export_earnings_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-up"></i> +{{ "%.1f"|format(spending_stats.export_earnings_change) }}% vs last week
+                        </small>
+                    {% elif spending_stats.export_earnings_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-down"></i> {{ "%.1f"|format(spending_stats.export_earnings_change) }}% vs last week
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last week</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body text-center">
+                <h4 class="metric-value">£{{ "%.2f"|format(spending_stats.net_cost|abs) }}</h4>
+                <p class="metric-label mb-1">
+                    {% if spending_stats.net_is_cost %}
+                        Net Weekly Cost
+                    {% else %}
+                        Net Weekly Savings
+                    {% endif %}
+                </p>
+                <small>£{{ "%.2f"|format(spending_stats.avg_daily_net) }}/day avg</small>
+                {% if spending_stats.has_prev_week %}
+                <div class="mt-1">
+                    {% if spending_stats.net_cost_change > 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-up"></i> +{{ "%.1f"|format(spending_stats.net_cost_change) }}% vs last week
+                        </small>
+                    {% elif spending_stats.net_cost_change < 0 %}
+                        <small class="badge bg-light text-dark">
+                            <i class="fas fa-arrow-down"></i> {{ "%.1f"|format(spending_stats.net_cost_change) }}% vs last week
+                        </small>
+                    {% else %}
+                        <small class="badge bg-light text-dark">No change vs last week</small>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark">
+            <div class="card-body text-center">
+                <h4 class="metric-value">£{{ "%.2f"|format(spending_stats.total_standing_charges) }}</h4>
+                <p class="metric-label mb-1">Standing Charges</p>
+                <small>Part of import cost</small>
+                <div class="mt-1">
+                    <small class="badge bg-dark text-white">
+                        <i class="fas fa-calendar"></i> {{ "%.1f"|format(spending_stats.period_days) }} days
+                    </small>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Spending Context -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6 class="card-title"><i class="fas fa-chart-bar me-2"></i>Spending Summary</h6>
+                <div class="row text-center">
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Daily Import Cost</small>
+                            <strong class="text-danger">£{{ "%.2f"|format(spending_stats.avg_daily_cost) }}</strong>
+                            <small class="text-muted">including standing charges</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Daily Export Earnings</small>
+                            <strong class="text-success">£{{ "%.2f"|format(spending_stats.avg_daily_earnings) }}</strong>
+                            <small class="text-muted">from solar generation</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Net Daily {{ 'Cost' if spending_stats.net_is_cost else 'Savings' }}</small>
+                            <strong class="text-primary">£{{ "%.2f"|format(spending_stats.avg_daily_net) }}</strong>
+                            <small class="text-muted">after export earnings</small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex flex-column">
+                            <small class="text-muted">Period Length</small>
+                            <strong class="text-warning">{{ "%.1f"|format(spending_stats.period_days) }} days</strong>
+                            <small class="text-muted">of spending data</small>
                         </div>
                     </div>
                 </div>
