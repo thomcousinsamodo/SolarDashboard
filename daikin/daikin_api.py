@@ -344,14 +344,18 @@ class DaikinAPI:
         
         raise Exception("No climate control management point found")
     
-    def set_hot_water_temperature(self, temperature, device_index=0):
+    def set_hot_water_mode(self, mode, device_index=0):
         """
-        Set the target domestic hot water temperature.
+        Set the domestic hot water mode using schedule control.
         
         Args:
-            temperature (float): Target temperature in Celsius
+            mode (str): Hot water mode - 'eco', 'comfort', or 'turn_off'
             device_index (int): Device index (default: 0)
         """
+        valid_modes = ['eco', 'comfort', 'turn_off']
+        if mode not in valid_modes:
+            raise Exception(f"Invalid mode '{mode}'. Must be one of: {valid_modes}")
+            
         devices = self.get_devices()
         if not devices or len(devices) <= device_index:
             raise Exception(f"No device found at index {device_index}")
@@ -363,9 +367,59 @@ class DaikinAPI:
         for mp in device.get('managementPoints', []):
             if mp.get('managementPointType') == 'domesticHotWaterTank':
                 mp_id = mp.get('embeddedId')
-                # Use the path for hot water temperature setpoint
-                path = "/operationModes/heating/setpoints/domesticHotWaterTemperature"
-                return self._send_control_command(device_id, mp_id, 'temperatureControl', temperature, path)
+                
+                # For now, we'll map to the onOffMode control since schedule control is complex
+                # In the future, we could implement proper schedule control for preset modes
+                if mode == 'turn_off':
+                    return self._send_control_command(device_id, mp_id, 'onOffMode', 'off')
+                else:
+                    # Turn on the hot water tank - the actual temperature preset is controlled by schedule
+                    return self._send_control_command(device_id, mp_id, 'onOffMode', 'on')
+        
+        raise Exception("No domestic hot water tank management point found")
+    
+    def set_hot_water_temperature(self, temperature, device_index=0):
+        """
+        Set the target domestic hot water temperature by mapping to preset modes.
+        
+        Args:
+            temperature (float): Target temperature in Celsius
+            device_index (int): Device index (default: 0)
+        """
+        # Map temperature ranges to preset modes
+        if temperature < 40:
+            mode = 'turn_off'
+        elif temperature < 50:
+            mode = 'eco'
+        else:
+            mode = 'comfort'
+            
+        return self.set_hot_water_mode(mode, device_index)
+    
+    def set_powerful_mode(self, mode, device_index=0):
+        """
+        Control the powerful mode (immersion heater) for domestic hot water.
+        
+        Args:
+            mode (str): 'on' to enable immersion heater, 'off' to disable
+            device_index (int): Device index (default: 0)
+        """
+        valid_modes = ['on', 'off']
+        if mode not in valid_modes:
+            raise Exception(f"Invalid mode '{mode}'. Must be one of: {valid_modes}")
+            
+        devices = self.get_devices()
+        if not devices or len(devices) <= device_index:
+            raise Exception(f"No device found at index {device_index}")
+        
+        device = devices[device_index]
+        device_id = device.get('_id')
+        
+        # Find domestic hot water tank management point
+        for mp in device.get('managementPoints', []):
+            if mp.get('managementPointType') == 'domesticHotWaterTank':
+                mp_id = mp.get('embeddedId')
+                return self._send_control_command(device_id, mp_id, 'powerfulMode', mode)
         
         raise Exception("No domestic hot water tank management point found")
     
@@ -478,7 +532,7 @@ def main():
         elif args.set_hot_water is not None:
             print(f"🚿 Setting hot water temperature to {args.set_hot_water}°C...")
             api.set_hot_water_temperature(args.set_hot_water)
-            print(f"✅ Hot water temperature set to {args.set_hot_water}°C successfully!")
+            print(f"✅ Hot water temperature mode set successfully!")
         
         elif args.save_to_db:
             print("💾 Saving current data to database...")

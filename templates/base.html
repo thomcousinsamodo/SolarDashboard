@@ -102,6 +102,13 @@
                             <i class="fas fa-pound-sign me-1"></i>Spending
                         </a>
                     </li>
+                    {% if daikin_available|default(false) %}
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint == 'heat_pump_dashboard' %}active{% endif %}" href="{{ url_for('heat_pump_dashboard') }}">
+                            <i class="fas fa-thermometer-half me-1"></i>Heat Pump
+                        </a>
+                    </li>
+                    {% endif %}
                     {% if tariff_available|default(false) %}
                     <li class="nav-item dropdown">
                         <a class="nav-link dropdown-toggle {% if request.endpoint in ['tariff_dashboard', 'periods', 'add_period_form', 'rate_lookup_form'] %}active{% endif %}" 
@@ -140,6 +147,10 @@
                             <li><span class="dropdown-item-text">
                                 <span class="status-indicator {% if tariff_available|default(false) %}status-online{% else %}status-offline{% endif %}"></span>
                                 Tariff Tracker
+                            </span></li>
+                            <li><span class="dropdown-item-text">
+                                <span class="status-indicator {% if daikin_available|default(false) %}status-online{% else %}status-offline{% endif %}"></span>
+                                Heat Pump
                             </span></li>
                         </ul>
                     </li>

@@ -1,0 +1,528 @@
+{% extends "base.html" %}
+
+{% block title %}Heat Pump Control - Unified Octopus Energy{% endblock %}
+
+{% block extra_head %}
+<style>
+    .temperature-input {
+        width: 80px;
+        display: inline-block;
+    }
+    .heat-pump-card {
+        transition: all 0.3s ease;
+    }
+    .heat-pump-card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+    }
+    .temperature-display {
+        font-size: 2.5rem;
+        font-weight: bold;
+    }
+    .status-badge {
+        font-size: 0.9rem;
+        padding: 0.5rem 1rem;
+    }
+    .control-button {
+        min-width: 120px;
+    }
+    .refresh-btn {
+        position: absolute;
+        top: 1rem;
+        right: 1rem;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<!-- Header -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex justify-content-between align-items-center">
+            <div>
+                <h1 class="display-5 fw-bold text-primary">
+                    <i class="fas fa-thermometer-half me-3"></i>
+                    Heat Pump Control
+                </h1>
+                <p class="lead text-muted">Control your Daikin Altherma heat pump</p>
+            </div>
+            <button class="btn btn-outline-primary refresh-btn" onclick="refreshStatus()" id="refresh-btn">
+                <i class="fas fa-sync-alt me-1"></i>Refresh
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Connection Status -->
+{% if error_message %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="alert alert-warning" role="alert">
+            <h5 class="alert-heading">
+                <i class="fas fa-exclamation-triangle me-2"></i>Connection Issue
+            </h5>
+            <p class="mb-3">{{ error_message }}</p>
+            {% if not daikin_available %}
+                <p class="mb-3">The Daikin integration is not properly configured. Please check your setup.</p>
+            {% else %}
+                <a href="{{ url_for('heat_pump_connect') }}" class="btn btn-warning">
+                    <i class="fas fa-link me-1"></i>Connect Heat Pump
+                </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Device Information -->
+{% if device_info %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card border-info">
+            <div class="card-header bg-info text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-info-circle me-2"></i>
+                    Device Information
+                </h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>Device Name:</strong> {{ device_info.get('deviceName', 'Unknown') }}</p>
+                        <p><strong>Model:</strong> {{ device_info.get('deviceModel', 'Unknown') }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Serial Number:</strong> {{ device_info.get('serialNumber', 'Unknown') }}</p>
+                        <p><strong>Status:</strong> 
+                            {% if heat_pump_status.get('online') %}
+                                <span class="badge bg-success status-badge">
+                                    <i class="fas fa-check-circle me-1"></i>Online
+                                </span>
+                            {% else %}
+                                <span class="badge bg-danger status-badge">
+                                    <i class="fas fa-times-circle me-1"></i>Offline
+                                </span>
+                            {% endif %}
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Temperature Monitoring -->
+{% if heat_pump_status %}
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card heat-pump-card bg-primary text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-home fa-2x mb-2"></i>
+                <div class="temperature-display" id="room-temp">
+                    {{ "%.1f°C"|format(heat_pump_status.room_temperature) if heat_pump_status.room_temperature else "--" }}
+                </div>
+                <p class="mb-0">Room Temperature</p>
+                <small>Target: {{ "%.1f°C"|format(heat_pump_status.target_temperature) if heat_pump_status.target_temperature else "--" }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card heat-pump-card bg-info text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-cloud fa-2x mb-2"></i>
+                <div class="temperature-display" id="outdoor-temp">
+                    {{ "%.1f°C"|format(heat_pump_status.outdoor_temperature) if heat_pump_status.outdoor_temperature else "--" }}
+                </div>
+                <p class="mb-0">Outdoor Temperature</p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card heat-pump-card bg-warning text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-tint fa-2x mb-2"></i>
+                <div class="temperature-display" id="hot-water-temp">
+                    {{ "%.1f°C"|format(heat_pump_status.hot_water_temperature) if heat_pump_status.hot_water_temperature else "--" }}
+                </div>
+                <p class="mb-0">Hot Water Tank</p>
+                <small>Target: {{ "%.1f°C"|format(heat_pump_status.hot_water_target) if heat_pump_status.hot_water_target else "--" }}</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card heat-pump-card bg-secondary text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-water fa-2x mb-2"></i>
+                <div class="temperature-display" id="leaving-water-temp">
+                    {{ "%.1f°C"|format(heat_pump_status.leaving_water_temperature) if heat_pump_status.leaving_water_temperature else "--" }}
+                </div>
+                <p class="mb-0">Leaving Water</p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Control Panels -->
+{% if heat_pump_status %}
+<div class="row">
+    <!-- Climate Control -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">
+                    <i class="fas fa-home me-2"></i>
+                    Central Heating Control
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Status -->
+                <div class="mb-3">
+                    <p><strong>Status:</strong> 
+                        {% if heat_pump_status.climate_on %}
+                            <span class="badge bg-success status-badge" id="climate-status">
+                                <i class="fas fa-power-off me-1"></i>ON
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary status-badge" id="climate-status">
+                                <i class="fas fa-power-off me-1"></i>OFF
+                            </span>
+                        {% endif %}
+                    </p>
+                </div>
+                
+                <!-- Temperature Control -->
+                <div class="mb-3">
+                    <label class="form-label"><strong>Target Temperature:</strong></label>
+                    <div class="input-group">
+                        <input type="number" class="form-control temperature-input" 
+                               id="target-temp-input" 
+                               value="{{ heat_pump_status.target_temperature if heat_pump_status.target_temperature else 20 }}"
+                               min="5" max="35" step="0.5">
+                        <span class="input-group-text">°C</span>
+                        <button class="btn btn-outline-primary" onclick="setTemperature('room')">
+                            <i class="fas fa-check me-1"></i>Set
+                        </button>
+                    </div>
+                    <small class="text-muted">Range: 5°C - 35°C</small>
+                </div>
+                
+                <!-- On/Off Controls -->
+                <div class="d-grid gap-2">
+                    <button class="btn btn-success control-button" onclick="controlClimate('on')" id="climate-on-btn">
+                        <i class="fas fa-power-off me-1"></i>Turn On
+                    </button>
+                    <button class="btn btn-danger control-button" onclick="controlClimate('off')" id="climate-off-btn">
+                        <i class="fas fa-power-off me-1"></i>Turn Off
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Hot Water Control -->
+    <div class="col-md-6 mb-4">
+        <div class="card h-100">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0">
+                    <i class="fas fa-tint me-2"></i>
+                    Hot Water Control
+                </h5>
+            </div>
+            <div class="card-body">
+                <!-- Status -->
+                <div class="mb-3">
+                    <p><strong>Status:</strong> 
+                        {% if heat_pump_status.hot_water_on %}
+                            <span class="badge bg-success status-badge" id="hot-water-status">
+                                <i class="fas fa-power-off me-1"></i>ON
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary status-badge" id="hot-water-status">
+                                <i class="fas fa-power-off me-1"></i>OFF
+                            </span>
+                        {% endif %}
+                    </p>
+                    <p><strong>Immersion Heater:</strong> 
+                        {% if heat_pump_status.powerful_mode %}
+                            <span class="badge bg-danger status-badge" id="powerful-mode-status">
+                                <i class="fas fa-fire me-1"></i>ON
+                            </span>
+                        {% else %}
+                            <span class="badge bg-secondary status-badge" id="powerful-mode-status">
+                                <i class="fas fa-fire me-1"></i>OFF
+                            </span>
+                        {% endif %}
+                    </p>
+                </div>
+                
+
+                
+                <!-- Control Buttons -->
+                <div class="d-grid gap-2">
+                    <div class="row">
+                        <div class="col-6">
+                            <button class="btn btn-success control-button w-100" onclick="controlHotWater('on')" id="hot-water-on-btn">
+                                <i class="fas fa-power-off me-1"></i>Turn On
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button class="btn btn-danger control-button w-100" onclick="controlHotWater('off')" id="hot-water-off-btn">
+                                <i class="fas fa-power-off me-1"></i>Turn Off
+                            </button>
+                        </div>
+                    </div>
+                    <div class="row mt-2">
+                        <div class="col-6">
+                            <button class="btn btn-warning control-button w-100" onclick="controlPowerfulMode('on')" id="powerful-on-btn">
+                                <i class="fas fa-fire me-1"></i>Immersion On
+                            </button>
+                        </div>
+                        <div class="col-6">
+                            <button class="btn btn-outline-warning control-button w-100" onclick="controlPowerfulMode('off')" id="powerful-off-btn">
+                                <i class="fas fa-fire me-1"></i>Immersion Off
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Status Messages -->
+<div id="status-message" class="mt-3" style="display: none;">
+    <div class="alert" id="status-alert"></div>
+</div>
+
+<!-- JavaScript for Controls -->
+<script>
+let isProcessing = false;
+
+function showStatus(message, type = 'info') {
+    const statusDiv = document.getElementById('status-message');
+    const alertDiv = document.getElementById('status-alert');
+    
+    // Clear existing classes
+    alertDiv.className = 'alert';
+    
+    // Add appropriate class
+    if (type === 'success') {
+        alertDiv.classList.add('alert-success');
+    } else if (type === 'error') {
+        alertDiv.classList.add('alert-danger');
+    } else if (type === 'warning') {
+        alertDiv.classList.add('alert-warning');
+    } else {
+        alertDiv.classList.add('alert-info');
+    }
+    
+    alertDiv.innerHTML = message;
+    statusDiv.style.display = 'block';
+    
+    // Auto-hide success messages after 3 seconds
+    if (type === 'success') {
+        setTimeout(() => {
+            statusDiv.style.display = 'none';
+        }, 3000);
+    }
+}
+
+function setButtonLoading(buttonId, loading = true) {
+    const button = document.getElementById(buttonId);
+    if (!button) return;
+    
+    if (loading) {
+        button.disabled = true;
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.className = 'fas fa-spinner fa-spin me-1';
+        }
+    } else {
+        button.disabled = false;
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.className = 'fas fa-power-off me-1';
+        }
+    }
+}
+
+function setRefreshLoading(loading = true) {
+    const button = document.getElementById('refresh-btn');
+    if (!button) return;
+    
+    if (loading) {
+        button.disabled = true;
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.classList.add('fa-spin');
+        }
+    } else {
+        button.disabled = false;
+        const icon = button.querySelector('i');
+        if (icon) {
+            icon.classList.remove('fa-spin');
+        }
+    }
+}
+
+async function sendCommand(action, value = null) {
+    if (isProcessing) return;
+    isProcessing = true;
+    
+    try {
+        const response = await fetch('/api/heat-pump/control', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                action: action,
+                value: value
+            })
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            showStatus(`<i class="fas fa-check-circle me-1"></i>${data.message}`, 'success');
+            // Refresh status after successful command
+            setTimeout(() => refreshStatus(), 1000);
+        } else {
+            showStatus(`<i class="fas fa-exclamation-triangle me-1"></i>Error: ${data.error}`, 'error');
+        }
+        
+    } catch (error) {
+        showStatus(`<i class="fas fa-exclamation-triangle me-1"></i>Network error: ${error.message}`, 'error');
+    } finally {
+        isProcessing = false;
+    }
+}
+
+function controlClimate(action) {
+    const buttonId = action === 'on' ? 'climate-on-btn' : 'climate-off-btn';
+    setButtonLoading(buttonId, true);
+    
+    sendCommand(`climate_${action}`).finally(() => {
+        setButtonLoading(buttonId, false);
+    });
+}
+
+function controlHotWater(action) {
+    const buttonId = action === 'on' ? 'hot-water-on-btn' : 'hot-water-off-btn';
+    setButtonLoading(buttonId, true);
+    
+    sendCommand(`hot_water_${action}`).finally(() => {
+        setButtonLoading(buttonId, false);
+    });
+}
+
+function controlPowerfulMode(action) {
+    const buttonId = action === 'on' ? 'powerful-on-btn' : 'powerful-off-btn';
+    setButtonLoading(buttonId, true);
+    
+    sendCommand(`powerful_mode_${action}`).finally(() => {
+        setButtonLoading(buttonId, false);
+    });
+}
+
+
+
+function setTemperature(type) {
+    if (type === 'hot_water') {
+        showStatus('<i class="fas fa-info-circle me-1"></i>Hot water temperature uses preset modes. Use the dropdown to select eco or comfort mode.', 'info');
+        return;
+    }
+    
+    const input = document.getElementById('target-temp-input');
+    const temperature = parseFloat(input.value);
+    
+    if (isNaN(temperature)) {
+        showStatus('<i class="fas fa-exclamation-triangle me-1"></i>Please enter a valid temperature', 'warning');
+        return;
+    }
+    
+    sendCommand('set_temperature', temperature);
+}
+
+
+
+async function refreshStatus() {
+    setRefreshLoading(true);
+    
+    try {
+        const response = await fetch('/api/heat-pump/status');
+        const data = await response.json();
+        
+        if (data.success) {
+            const status = data.status;
+            
+            // Update temperature displays
+            document.getElementById('room-temp').textContent = 
+                status.room_temperature ? `${status.room_temperature.toFixed(1)}°C` : '--';
+            document.getElementById('outdoor-temp').textContent = 
+                status.outdoor_temperature ? `${status.outdoor_temperature.toFixed(1)}°C` : '--';
+            document.getElementById('hot-water-temp').textContent = 
+                status.hot_water_temperature ? `${status.hot_water_temperature.toFixed(1)}°C` : '--';
+            document.getElementById('leaving-water-temp').textContent = 
+                status.leaving_water_temperature ? `${status.leaving_water_temperature.toFixed(1)}°C` : '--';
+            
+            // Update status badges
+            const climateStatus = document.getElementById('climate-status');
+            if (status.climate_on) {
+                climateStatus.className = 'badge bg-success status-badge';
+                climateStatus.innerHTML = '<i class="fas fa-power-off me-1"></i>ON';
+            } else {
+                climateStatus.className = 'badge bg-secondary status-badge';
+                climateStatus.innerHTML = '<i class="fas fa-power-off me-1"></i>OFF';
+            }
+            
+            const hotWaterStatus = document.getElementById('hot-water-status');
+            if (status.hot_water_on) {
+                hotWaterStatus.className = 'badge bg-success status-badge';
+                hotWaterStatus.innerHTML = '<i class="fas fa-power-off me-1"></i>ON';
+            } else {
+                hotWaterStatus.className = 'badge bg-secondary status-badge';
+                hotWaterStatus.innerHTML = '<i class="fas fa-power-off me-1"></i>OFF';
+            }
+            
+            const powerfulModeStatus = document.getElementById('powerful-mode-status');
+            if (status.powerful_mode) {
+                powerfulModeStatus.className = 'badge bg-danger status-badge';
+                powerfulModeStatus.innerHTML = '<i class="fas fa-fire me-1"></i>ON';
+            } else {
+                powerfulModeStatus.className = 'badge bg-secondary status-badge';
+                powerfulModeStatus.innerHTML = '<i class="fas fa-fire me-1"></i>OFF';
+            }
+            
+            // Update target temperature inputs
+            if (status.target_temperature) {
+                document.getElementById('target-temp-input').value = status.target_temperature;
+            }
+            
+            showStatus('<i class="fas fa-check-circle me-1"></i>Status updated successfully', 'success');
+        } else {
+            showStatus(`<i class="fas fa-exclamation-triangle me-1"></i>Failed to refresh status: ${data.error}`, 'error');
+        }
+        
+    } catch (error) {
+        showStatus(`<i class="fas fa-exclamation-triangle me-1"></i>Network error: ${error.message}`, 'error');
+    } finally {
+        setRefreshLoading(false);
+    }
+}
+
+// Auto-refresh every 30 seconds
+setInterval(refreshStatus, 30000);
+
+// Enable Enter key for temperature inputs
+document.getElementById('target-temp-input')?.addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+        setTemperature('room');
+    }
+});
+</script>
+
+{% endblock %} 

@@ -19,6 +19,41 @@ from credential_manager import CredentialManager
 # Initialize credential manager
 credential_manager = CredentialManager()
 
+# Daikin Heat Pump integration
+try:
+    import sys
+    sys.path.append('daikin')  # Add daikin directory to path
+    from daikin_api import DaikinAPI
+    from daikin_auth import DaikinAuth
+    import daikin_database  # Import the module, not a class
+    DAIKIN_AVAILABLE = True
+    
+    # Daikin credentials
+    DAIKIN_CLIENT_ID = "nEfgPUQTMd_eVEa0ZDYMWOxC"
+    DAIKIN_CLIENT_SECRET = "6Ne0AWgG9nFwKOTs-TzDNo-gABOtzcdJSHb8yq80UR9TUfHuuX0zYy72yqmua29tHXMQVT4uHRNX8Ts4rrtaZw"
+    
+    # Initialize Daikin API
+    def get_daikin_api():
+        """Get initialized Daikin API instance."""
+        try:
+            # Initialize DaikinAPI with credentials (it creates its own auth internally)
+            api = DaikinAPI(DAIKIN_CLIENT_ID, DAIKIN_CLIENT_SECRET)
+            # Set the correct path for tokens file
+            api.auth.tokens_file = "daikin/tokens.json"
+            if api.auth.is_authenticated():
+                return api
+            return None
+        except Exception as e:
+            print(f"Warning: Could not initialize Daikin API: {e}")
+            return None
+
+except ImportError as e:
+    print(f"⚠️  Daikin heat pump integration not available: {e}")
+    DAIKIN_AVAILABLE = False
+    
+    def get_daikin_api():
+        return None
+
 def get_api_credentials():
     """Get API credentials using secure credential manager."""
     try:
@@ -172,6 +207,48 @@ solar_data = load_solar_data()
 daily_df = solar_data['daily']
 raw_df = solar_data['raw']
 
+def extract_current_hot_water_mode(mp):
+    """
+    Extract the current hot water mode from the schedule based on current time.
+    
+    Args:
+        mp: Management point data for domesticHotWaterTank
+        
+    Returns:
+        str: Current mode ('eco', 'comfort', 'turn_off') or None if can't determine
+    """
+    try:
+        from datetime import datetime
+        schedule = mp.get('schedule', {}).get('value', {})
+        current_time = datetime.now()
+        day_name = current_time.strftime('%A').lower()
+        current_hour_minute = current_time.strftime('%H:%M:%S')
+        
+        # Navigate through schedule structure
+        modes = schedule.get('modes', {})
+        heating_mode = modes.get('heating', {})
+        schedules = heating_mode.get('schedules', {})
+        schedule_heating_mode1 = schedules.get('scheduleHeatingMode1', {})
+        actions = schedule_heating_mode1.get('actions', {})
+        today_actions = actions.get(day_name, {})
+        
+        if not today_actions:
+            return None
+            
+        # Find the most recent action before current time
+        current_mode = None
+        sorted_times = sorted(today_actions.keys())
+        for time_str in sorted_times:
+            if time_str <= current_hour_minute:
+                action = today_actions[time_str]
+                current_mode = action.get('domesticHotWaterTemperature')
+            else:
+                break
+                
+        return current_mode
+    except Exception:
+        return None
+
 # Define color scheme
 colors = {
     'background': '#f8f9fa',
@@ -219,7 +296,8 @@ def index():
                          tariff_available=TARIFF_AVAILABLE,
                          solar_data_available=solar_data_available,
                          credentials_available=credentials_available,
-                         credential_error=error_msg if not credentials_available else None)
+                         credential_error=error_msg if not credentials_available else None,
+                         daikin_available=DAIKIN_AVAILABLE)
 
 def get_dashboard_solar_stats():
     """Get solar stats for the main dashboard with weekly focus and comparisons."""
@@ -501,7 +579,8 @@ def solar_dashboard():
                          solar_stats=solar_stats,
                          data_min_date=data_min_date,
                          data_max_date=data_max_date,
-                         tariff_available=TARIFF_AVAILABLE)
+                         tariff_available=TARIFF_AVAILABLE,
+                         daikin_available=DAIKIN_AVAILABLE)
 
 @app.route('/spending')
 def spending_dashboard():
@@ -542,7 +621,8 @@ def spending_dashboard():
                          start_date=start_date.strftime('%Y-%m-%d'),
                          end_date=end_date.strftime('%Y-%m-%d'),
                          tariff_available=tariff_available,
-                         solar_data_available=solar_data_available)
+                         solar_data_available=solar_data_available,
+                         daikin_available=DAIKIN_AVAILABLE)
 
 @app.route('/api/solar-chart', methods=['POST'])
 def api_solar_chart():
@@ -727,7 +807,8 @@ if TARIFF_AVAILABLE:
                              summary=summary,
                              validation=validation,
                              tariff_available=TARIFF_AVAILABLE,
-                             solar_data_available=solar_data_available)
+                             solar_data_available=solar_data_available,
+                             daikin_available=DAIKIN_AVAILABLE)
 
     @app.route('/periods')
     def periods():
@@ -758,7 +839,8 @@ if TARIFF_AVAILABLE:
         
         return render_template('rate_lookup.html',
                              tariff_available=TARIFF_AVAILABLE,
-                             solar_data_available=solar_data_available)
+                             solar_data_available=solar_data_available,
+                             daikin_available=DAIKIN_AVAILABLE)
 
     @app.route('/api/rate-lookup', methods=['POST'])
     def api_rate_lookup():
@@ -2241,10 +2323,296 @@ def refresh_pricing_data():
             'message': f'Pricing refresh failed: {str(e)}'
         }
 
+# Heat Pump Routes
+@app.route('/heat-pump')
+def heat_pump_dashboard():
+    """Heat pump control dashboard."""
+    if not DAIKIN_AVAILABLE:
+        flash('Heat pump integration is not available. Please check the Daikin integration setup.', 'error')
+        return redirect(url_for('index'))
+    
+    daikin_api = get_daikin_api()
+    
+    # Get heat pump status
+    heat_pump_status = {}
+    device_info = {}
+    error_message = None
+    
+    if daikin_api:
+        try:
+            # Get heat pump data
+            heat_pump_data = daikin_api.get_heat_pump_data()
+            if heat_pump_data:
+                device_info = {
+                    'deviceName': heat_pump_data.get('device_name'),
+                    'deviceModel': heat_pump_data.get('device_model'),
+                    'serialNumber': heat_pump_data.get('device_id')
+                }
+                
+                # Extract status and sensor data
+                sensors = heat_pump_data.get('sensors', {})
+                status = heat_pump_data.get('status', {})
+                raw_data = heat_pump_data.get('raw_data', {})
+                
+
+                
+                heat_pump_status = {
+                    'online': heat_pump_data.get('is_online', False),
+                    'climate_on': status.get('on_off') == 'on',
+                    'hot_water_on': False,  # Will need to extract from management points
+                    'powerful_mode': False,  # Immersion heater status
+                    'room_temperature': sensors.get('roomTemperature', {}).get('value'),
+                    'target_temperature': None,  # Will need to extract from target_temp
+                    'outdoor_temperature': sensors.get('outdoorTemperature', {}).get('value'),
+                    'hot_water_temperature': None,  # Will extract from hot water management point
+                    'hot_water_target': None,  # Will need to extract
+                    'hot_water_mode': None,  # Will need to extract current mode
+                    'leaving_water_temperature': sensors.get('leavingWaterTemperature', {}).get('value'),
+                }
+                
+                # Extract target temperatures from status
+                target_temps = status.get('target_temp', {})
+                if isinstance(target_temps, dict):
+                    heating_setpoint = target_temps.get('heating', {}).get('setpoints', {}).get('roomTemperature', {})
+                    if isinstance(heating_setpoint, dict):
+                        heat_pump_status['target_temperature'] = heating_setpoint.get('value')
+                
+                # Try to extract hot water info from raw data
+                for mp in raw_data.get('managementPoints', []):
+                    if mp.get('managementPointType') == 'domesticHotWaterTank':
+                        heat_pump_status['hot_water_on'] = mp.get('onOffMode', {}).get('value') == 'on'
+                        heat_pump_status['powerful_mode'] = mp.get('powerfulMode', {}).get('value') == 'on'
+                        
+                        # Extract current hot water mode from schedule
+                        current_mode = extract_current_hot_water_mode(mp)
+                        if current_mode:
+                            heat_pump_status['hot_water_mode'] = current_mode
+                        
+                        # Extract hot water temperature from sensors in this management point
+                        hot_water_sensors = mp.get('sensoryData', {}).get('value', {})
+                        if 'tankTemperature' in hot_water_sensors:
+                            tank_temp_data = hot_water_sensors['tankTemperature']
+                            if isinstance(tank_temp_data, dict) and 'value' in tank_temp_data:
+                                heat_pump_status['hot_water_temperature'] = tank_temp_data['value']
+                        
+                        # Extract hot water target temperature
+                        temp_control = mp.get('temperatureControl', {}).get('value', {})
+                        if isinstance(temp_control, dict):
+                            # Check various possible paths for hot water setpoint
+                            setpoints = temp_control.get('setpoints', {})
+                            if 'domesticHotWaterTemperature' in setpoints:
+                                dhw_setpoint = setpoints['domesticHotWaterTemperature']
+                                if isinstance(dhw_setpoint, dict) and 'value' in dhw_setpoint:
+                                    target_temp = dhw_setpoint['value']
+                                    heat_pump_status['hot_water_target'] = target_temp
+                                    # Determine mode based on temperature (common values: eco ~45-50°C, comfort ~55-60°C)
+                                    if target_temp <= 50:
+                                        heat_pump_status['hot_water_mode'] = 'eco'
+                                    else:
+                                        heat_pump_status['hot_water_mode'] = 'comfort'
+                            elif 'operationModes' in temp_control:
+                                # Alternative path structure
+                                op_modes = temp_control.get('operationModes', {})
+                                heating_mode = op_modes.get('heating', {})
+                                heating_setpoints = heating_mode.get('setpoints', {})
+                                if 'domesticHotWaterTemperature' in heating_setpoints:
+                                    dhw_setpoint = heating_setpoints['domesticHotWaterTemperature']
+                                    if isinstance(dhw_setpoint, dict) and 'value' in dhw_setpoint:
+                                        target_temp = dhw_setpoint['value']
+                                        heat_pump_status['hot_water_target'] = target_temp
+                                        # Determine mode based on temperature
+                                        if target_temp <= 50:
+                                            heat_pump_status['hot_water_mode'] = 'eco'
+                                        else:
+                                            heat_pump_status['hot_water_mode'] = 'comfort'
+        except Exception as e:
+            error_message = f"Failed to get heat pump status: {str(e)}"
+    else:
+        error_message = "Heat pump not connected. Please check authentication."
+    
+    return render_template('heat_pump.html', 
+                         heat_pump_status=heat_pump_status,
+                         device_info=device_info,
+                         error_message=error_message,
+                         daikin_available=DAIKIN_AVAILABLE)
+
+@app.route('/api/heat-pump/control', methods=['POST'])
+def api_heat_pump_control():
+    """API endpoint for heat pump control commands."""
+    if not DAIKIN_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Heat pump integration not available'}), 400
+    
+    daikin_api = get_daikin_api()
+    if not daikin_api:
+        return jsonify({'success': False, 'error': 'Heat pump not connected'}), 400
+    
+    data = request.get_json()
+    action = data.get('action')
+    value = data.get('value')
+    
+    try:
+        if action == 'climate_on':
+            result = daikin_api.turn_on()
+        elif action == 'climate_off':
+            result = daikin_api.turn_off()
+        elif action == 'hot_water_on':
+            result = daikin_api.turn_hot_water_on()
+        elif action == 'hot_water_off':
+            result = daikin_api.turn_hot_water_off()
+        elif action == 'set_temperature':
+            temp = float(value)
+            if 5 <= temp <= 35:  # Reasonable temperature range
+                result = daikin_api.set_room_temperature(temp)
+            else:
+                return jsonify({'success': False, 'error': 'Temperature must be between 5°C and 35°C'}), 400
+        elif action == 'powerful_mode_on':
+            result = daikin_api.set_powerful_mode('on')
+        elif action == 'powerful_mode_off':
+            result = daikin_api.set_powerful_mode('off')
+
+        elif action == 'set_hot_water_temperature':
+            # For this heat pump model, temperature control uses preset modes
+            # instead of direct temperature setting
+            return jsonify({'success': False, 'error': 'This heat pump model uses preset temperature modes (eco/comfort) rather than direct temperature setting. Please use the dropdown to select preset mode.'}), 400
+        else:
+            return jsonify({'success': False, 'error': 'Unknown action'}), 400
+        
+        if result is True:
+            return jsonify({'success': True, 'message': f'Successfully executed {action}'})
+        else:
+            return jsonify({'success': False, 'error': f'Failed to execute {action}: Unknown error'}), 400
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/heat-pump/status')
+def api_heat_pump_status():
+    """API endpoint to get current heat pump status."""
+    if not DAIKIN_AVAILABLE:
+        return jsonify({'success': False, 'error': 'Heat pump integration not available'}), 400
+    
+    daikin_api = get_daikin_api()
+    if not daikin_api:
+        return jsonify({'success': False, 'error': 'Heat pump not connected'}), 400
+    
+    try:
+        heat_pump_data = daikin_api.get_heat_pump_data()
+        if not heat_pump_data:
+            return jsonify({'success': False, 'error': 'No heat pump data found'}), 404
+        
+        # Extract status and sensor data
+        sensors = heat_pump_data.get('sensors', {})
+        status = heat_pump_data.get('status', {})
+        raw_data = heat_pump_data.get('raw_data', {})
+        
+
+        
+        heat_pump_status = {
+            'online': heat_pump_data.get('is_online', False),
+            'climate_on': status.get('on_off') == 'on',
+            'hot_water_on': False,
+            'powerful_mode': False,  # Immersion heater status
+            'room_temperature': sensors.get('roomTemperature', {}).get('value'),
+            'target_temperature': None,
+            'outdoor_temperature': sensors.get('outdoorTemperature', {}).get('value'),
+            'hot_water_temperature': None,  # Will extract from hot water management point
+            'hot_water_target': None,
+            'hot_water_mode': None,  # Will need to extract current mode
+            'leaving_water_temperature': sensors.get('leavingWaterTemperature', {}).get('value'),
+        }
+        
+        # Extract target temperatures from status
+        target_temps = status.get('target_temp', {})
+        if isinstance(target_temps, dict):
+            heating_setpoint = target_temps.get('heating', {}).get('setpoints', {}).get('roomTemperature', {})
+            if isinstance(heating_setpoint, dict):
+                heat_pump_status['target_temperature'] = heating_setpoint.get('value')
+        
+        # Try to extract hot water info from raw data
+        for mp in raw_data.get('managementPoints', []):
+            if mp.get('managementPointType') == 'domesticHotWaterTank':
+                heat_pump_status['hot_water_on'] = mp.get('onOffMode', {}).get('value') == 'on'
+                heat_pump_status['powerful_mode'] = mp.get('powerfulMode', {}).get('value') == 'on'
+                
+                # Extract current hot water mode from schedule
+                current_mode = extract_current_hot_water_mode(mp)
+                if current_mode:
+                    heat_pump_status['hot_water_mode'] = current_mode
+                
+                # Extract hot water temperature from sensors in this management point
+                hot_water_sensors = mp.get('sensoryData', {}).get('value', {})
+                if 'tankTemperature' in hot_water_sensors:
+                    tank_temp_data = hot_water_sensors['tankTemperature']
+                    if isinstance(tank_temp_data, dict) and 'value' in tank_temp_data:
+                        heat_pump_status['hot_water_temperature'] = tank_temp_data['value']
+                
+                # Extract hot water target temperature
+                temp_control = mp.get('temperatureControl', {}).get('value', {})
+                if isinstance(temp_control, dict):
+                    # Check various possible paths for hot water setpoint
+                    setpoints = temp_control.get('setpoints', {})
+                    if 'domesticHotWaterTemperature' in setpoints:
+                        dhw_setpoint = setpoints['domesticHotWaterTemperature']
+                        if isinstance(dhw_setpoint, dict) and 'value' in dhw_setpoint:
+                            target_temp = dhw_setpoint['value']
+                            heat_pump_status['hot_water_target'] = target_temp
+                            # Determine mode based on temperature
+                            if target_temp <= 50:
+                                heat_pump_status['hot_water_mode'] = 'eco'
+                            else:
+                                heat_pump_status['hot_water_mode'] = 'comfort'
+                        elif 'operationModes' in temp_control:
+                            # Alternative path structure
+                            op_modes = temp_control.get('operationModes', {})
+                            heating_mode = op_modes.get('heating', {})
+                            heating_setpoints = heating_mode.get('setpoints', {})
+                            if 'domesticHotWaterTemperature' in heating_setpoints:
+                                dhw_setpoint = heating_setpoints['domesticHotWaterTemperature']
+                                if isinstance(dhw_setpoint, dict) and 'value' in dhw_setpoint:
+                                    target_temp = dhw_setpoint['value']
+                                    heat_pump_status['hot_water_target'] = target_temp
+                                    # Determine mode based on temperature
+                                    if target_temp <= 50:
+                                        heat_pump_status['hot_water_mode'] = 'eco'
+                                    else:
+                                        heat_pump_status['hot_water_mode'] = 'comfort'
+        
+        return jsonify({'success': True, 'status': heat_pump_status})
+            
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/heat-pump/connect')
+def heat_pump_connect():
+    """Redirect to Daikin authentication."""
+    if not DAIKIN_AVAILABLE:
+        flash('Heat pump integration is not available.', 'error')
+        return redirect(url_for('heat_pump_dashboard'))
+    
+    try:
+        auth = DaikinAuth(DAIKIN_CLIENT_ID, DAIKIN_CLIENT_SECRET)
+        # Set the correct path for tokens file
+        auth.tokens_file = "daikin/tokens.json"
+        auth_url = auth.get_auth_url()
+        return redirect(auth_url)
+    except Exception as e:
+        flash(f'Failed to start authentication: {str(e)}', 'error')
+        return redirect(url_for('heat_pump_dashboard'))
+
+
+
 if __name__ == '__main__':
     print("🐙 Starting Unified Octopus Energy Dashboard...")
     print("🔌 Solar Dashboard: Available" if not daily_df.empty else "🔌 Solar Dashboard: No data")
     print("⚡ Tariff Tracker: Available" if TARIFF_AVAILABLE else "⚡ Tariff Tracker: Not available")
+    print("🌡️ Heat Pump Control: Available" if DAIKIN_AVAILABLE else "🌡️ Heat Pump Control: Not available")
     print("🌐 Dashboard will be available at: http://localhost:5000")
     
-    app.run(debug=True, host='0.0.0.0', port=5000) 
+    try:
+        app.run(debug=True, host='0.0.0.0', port=5000)
+    except KeyboardInterrupt:
+        print("\n🛑 Dashboard server stopped by user")
+    except Exception as e:
+        print(f"\n❌ Dashboard server error: {e}")
+        print("Press Enter to exit...")
+        input() 

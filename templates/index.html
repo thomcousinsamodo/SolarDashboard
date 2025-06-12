@@ -165,7 +165,7 @@
 
 <!-- Status Cards -->
 <div class="row mb-4">
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="card border-0 {{ 'bg-success' if solar_data_available else 'bg-warning' }} text-white">
             <div class="card-body text-center">
                 <i class="fas fa-solar-panel fa-3x mb-3"></i>
@@ -180,7 +180,7 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-md-4">
         <div class="card border-0 {{ 'bg-info' if tariff_available else 'bg-secondary' }} text-white">
             <div class="card-body text-center">
                 <i class="fas fa-calculator fa-3x mb-3"></i>
@@ -192,6 +192,28 @@
                         <i class="fas fa-times-circle me-1"></i>Not Available
                     {% endif %}
                 </p>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card border-0 {{ 'bg-primary' if daikin_available else 'bg-secondary' }} text-white">
+            <div class="card-body text-center">
+                <i class="fas fa-thermometer-half fa-3x mb-3"></i>
+                <h5>Heat Pump Control</h5>
+                <p class="mb-0">
+                    {% if daikin_available %}
+                        <i class="fas fa-check-circle me-1"></i>Available - Daikin Connected
+                    {% else %}
+                        <i class="fas fa-times-circle me-1"></i>Not Available
+                    {% endif %}
+                </p>
+                {% if daikin_available %}
+                <div class="mt-2">
+                    <a href="{{ url_for('heat_pump_dashboard') }}" class="btn btn-light btn-sm">
+                        <i class="fas fa-cog me-1"></i>Control Panel
+                    </a>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
