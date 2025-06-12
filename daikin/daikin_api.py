@@ -1,13 +1,28 @@
 #!/usr/bin/env python3
 """
 Daikin Heat Pump API
-Simple API to get heat pump information once authenticated
+Simple API for connecting to Daikin heat pumps via the Onecta Cloud API.
 """
 
 import requests
 import json
 from datetime import datetime
 from daikin_auth import DaikinAuth
+
+# Set up logging - integrate with main dashboard logging system
+import sys
+sys.path.append('../tariff_tracker')
+
+try:
+    from logging_config import get_logger, get_structured_logger, TimingContext
+    logger = get_logger('daikin.api')
+    structured_logger = get_structured_logger('daikin.api')
+except ImportError:
+    # Fallback to basic logging if main dashboard logging not available
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    structured_logger = None
 
 class DaikinAPI:
     def __init__(self, client_id=None, client_secret=None):
@@ -160,6 +175,8 @@ class DaikinAPI:
             value: Value to set
             path (str, optional): JSON path for complex values (e.g., temperature setpoints)
         """
+        start_time = datetime.now()
+        
         try:
             headers = self._get_headers()
             headers['Content-Type'] = 'application/json'
@@ -173,13 +190,66 @@ class DaikinAPI:
             
             response = requests.patch(url, headers=headers, json=request_body, timeout=10)
             
+            # Calculate response time
+            response_time = (datetime.now() - start_time).total_seconds()
+            
             if response.status_code == 204:
+                # Log successful control command
+                if structured_logger:
+                    structured_logger.log_api_call(
+                        method='PATCH',
+                        url=url,
+                        params={
+                            'characteristic': characteristic,
+                            'value': value,
+                            'path': path,
+                            'management_point': management_point_id
+                        },
+                        response_status=response.status_code,
+                        response_time=response_time
+                    )
+                
+                logger.info(f"Control command successful: {characteristic}={value} (path: {path}) in {response_time:.2f}s")
                 return True  # Success
             else:
-                raise Exception(f"Control command failed: {response.status_code} - {response.text}")
+                error_msg = f"Control command failed: {response.status_code} - {response.text}"
+                
+                if structured_logger:
+                    structured_logger.log_api_call(
+                        method='PATCH',
+                        url=url,
+                        params={
+                            'characteristic': characteristic,
+                            'value': value,
+                            'path': path
+                        },
+                        response_status=response.status_code,
+                        response_time=response_time,
+                        error=error_msg
+                    )
+                
+                logger.error(f"{error_msg} (took {response_time:.2f}s)")
+                raise Exception(error_msg)
                 
         except Exception as e:
-            raise Exception(f"Error sending control command: {e}")
+            # Calculate response time even on error
+            response_time = (datetime.now() - start_time).total_seconds()
+            error_msg = f"Error sending control command: {e}"
+            
+            if structured_logger and 'response.status_code' not in str(e):
+                structured_logger.log_api_call(
+                    method='PATCH',
+                    url=f"{self.api_base}/gateway-devices/{device_id}/management-points/{management_point_id}/characteristics/{characteristic}",
+                    params={
+                        'characteristic': characteristic,
+                        'value': value
+                    },
+                    response_time=response_time,
+                    error=str(e)
+                )
+            
+            logger.error(f"{error_msg} (took {response_time:.2f}s)")
+            raise Exception(error_msg)
     
     def turn_on(self, device_index=0):
         """Turn the climate control (room heating) on."""

@@ -9,12 +9,19 @@ import pandas as pd
 import os
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List
-import logging
-import json
+import sys
+sys.path.append('../tariff_tracker')
 
-# Set up logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+try:
+    from logging_config import get_logger, get_structured_logger, TimingContext
+    logger = get_logger('daikin.database')
+    structured_logger = get_structured_logger('daikin.database')
+except ImportError:
+    # Fallback to basic logging if main dashboard logging not available
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    structured_logger = None
 
 DATABASE_PATH = '../data/energy_data.db'
 
@@ -265,6 +272,8 @@ def update_daikin_database() -> Dict[str, Any]:
     Returns:
         Dict with status and statistics
     """
+    start_time = datetime.now()
+    
     try:
         from daikin_api import DaikinAPI
         
@@ -273,38 +282,80 @@ def update_daikin_database() -> Dict[str, Any]:
         
         # Check authentication
         if not api.auth.is_authenticated():
+            error_msg = 'Not authenticated. Run daikin_auth.py first.'
+            logger.error(f"Daikin database update failed: {error_msg}")
             return {
                 'status': 'error',
-                'message': 'Not authenticated. Run daikin_auth.py first.'
+                'message': error_msg
             }
         
-        # Get heat pump data
-        heat_pump_data = api.get_heat_pump_data()
+        # Get heat pump data with timing
+        if structured_logger:
+            with TimingContext(structured_logger, 'daikin_api_call', {'operation': 'get_heat_pump_data'}):
+                heat_pump_data = api.get_heat_pump_data()
+        else:
+            heat_pump_data = api.get_heat_pump_data()
         
-        # Save to database
-        consumption_saved = save_daikin_consumption_data(heat_pump_data)
-        status_saved = save_daikin_status_data(heat_pump_data)
+        # Save to database with timing
+        if structured_logger:
+            with TimingContext(structured_logger, 'daikin_database_save', {'device_id': heat_pump_data.get('device_id')}):
+                consumption_saved = save_daikin_consumption_data(heat_pump_data)
+                status_saved = save_daikin_status_data(heat_pump_data)
+        else:
+            consumption_saved = save_daikin_consumption_data(heat_pump_data)
+            status_saved = save_daikin_status_data(heat_pump_data)
+        
+        # Calculate duration and log success
+        duration = (datetime.now() - start_time).total_seconds()
         
         if consumption_saved and status_saved:
-            return {
+            result = {
                 'status': 'success',
                 'message': 'Daikin data updated successfully',
                 'device_name': heat_pump_data.get('device_name'),
-                'recorded_at': heat_pump_data.get('last_updated')
+                'recorded_at': heat_pump_data.get('last_updated'),
+                'duration_seconds': round(duration, 2)
             }
+            
+            if structured_logger:
+                structured_logger.log_api_call(
+                    method='GET', 
+                    url='daikin_onecta_api',
+                    response_status=200,
+                    response_time=duration
+                )
+                
+            logger.info(f"Daikin database updated successfully in {duration:.2f}s - Device: {heat_pump_data.get('device_name')}")
+            return result
         else:
-            return {
+            result = {
                 'status': 'partial',
                 'message': 'Some data may not have been saved',
                 'consumption_saved': consumption_saved,
-                'status_saved': status_saved
+                'status_saved': status_saved,
+                'duration_seconds': round(duration, 2)
             }
+            logger.warning(f"Partial Daikin database update - consumption: {consumption_saved}, status: {status_saved}")
+            return result
         
     except Exception as e:
-        logger.error(f"Error updating Daikin database: {e}")
+        duration = (datetime.now() - start_time).total_seconds()
+        error_msg = f'Error updating database: {str(e)}'
+        
+        logger.error(f"Daikin database update failed after {duration:.2f}s: {e}")
+        
+        if structured_logger:
+            structured_logger.log_api_call(
+                method='GET',
+                url='daikin_onecta_api', 
+                error=str(e),
+                response_time=duration
+            )
+        
         return {
             'status': 'error',
-            'message': f'Error updating database: {str(e)}'
+            'message': error_msg,
+            'duration_seconds': round(duration, 2)
         }
 
 def get_latest_daikin_status() -> Optional[Dict]:

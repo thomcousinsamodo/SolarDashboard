@@ -13,6 +13,21 @@ import hashlib
 import webbrowser
 from datetime import datetime, timedelta
 
+# Set up logging - integrate with main dashboard logging system
+import sys
+sys.path.append('../tariff_tracker')
+
+try:
+    from logging_config import get_logger, get_structured_logger, TimingContext
+    logger = get_logger('daikin.auth')
+    structured_logger = get_structured_logger('daikin.auth')
+except ImportError:
+    # Fallback to basic logging if main dashboard logging not available
+    import logging
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
+    structured_logger = None
+
 class DaikinAuth:
     def __init__(self, client_id, client_secret):
         self.client_id = client_id

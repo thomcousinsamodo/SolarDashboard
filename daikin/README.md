@@ -1,6 +1,6 @@
 # Daikin Heat Pump Integration
 
-Simple two-script solution for connecting to Daikin heat pumps via the Onecta Cloud API with database storage.
+Simple two-script solution for connecting to Daikin heat pumps via the Onecta Cloud API with database storage and comprehensive logging.
 
 ## Quick Start
 
@@ -96,6 +96,53 @@ python daikin_database.py --stats
 # Consumption summary for last 30 days
 python daikin_database.py --summary 30
 ```
+
+## Comprehensive Logging
+
+The Daikin integration is fully integrated with your dashboard's comprehensive logging system:
+
+### Log Files Generated
+- **`logs/tariff_tracker.log`** - All Daikin operations with detailed context
+- **`logs/performance.log`** - API call timing and performance metrics
+- **`logs/api_calls.log`** - Structured API call logs (when main dashboard is running)
+- **`logs/errors.log`** - Error-only logs for critical issues
+
+### What Gets Logged
+- **🌐 API Calls**: Method, URL, parameters, response times, status codes
+- **⚡ Performance**: Operation timing and duration metrics
+- **🎯 Control Commands**: Temperature changes, on/off operations
+- **💾 Database Operations**: Data save operations and record counts
+- **🚨 Errors**: Failed API calls, authentication issues, database errors
+
+### Structured Logging Format
+All logs use JSON format for easy parsing:
+```json
+{
+  "type": "api_call",
+  "method": "PATCH", 
+  "url": "https://api.onecta.daikineurope.com/v1/gateway-devices/.../characteristics/temperatureControl",
+  "params": {
+    "characteristic": "temperatureControl",
+    "value": 21.5,
+    "path": "/operationModes/heating/setpoints/roomTemperature"
+  },
+  "response_status": 204,
+  "response_time_ms": 111.624,
+  "timestamp": "2025-06-12T15:45:22.257650"
+}
+```
+
+### Performance Tracking
+Monitor heat pump operation performance:
+- **API response times** (typically 100-400ms)
+- **Database save duration** (typically 10-50ms)
+- **Total operation time** for complete updates
+
+### Log Rotation
+- **Automatic rotation** at midnight
+- **File size limits** (10MB per file)
+- **Backup retention** (5 backup files)
+- **UTF-8 encoding** for international characters
 
 ## Usage in Your Code
 
