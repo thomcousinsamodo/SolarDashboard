@@ -1,12 +1,14 @@
-requests>=2.25.0
-pandas>=1.3.0
-python-dateutil>=2.8.0
-flask>=2.3.0
-plotly>=5.15.0
-dash>=2.14.0
-dash-bootstrap-components>=1.4.0
-pytz>=2023.3
+Flask==3.0.0
+requests==2.31.0
+python-dotenv==1.0.0
+plotly==5.17.0
+pandas==2.1.3
+# netifaces>=0.11.0  # Commented out due to Windows build issues
+psutil>=5.9.0  # Alternative for network discovery
 
 # Security & Credential Management
 cryptography>=41.0.0
 keyring>=24.0.0 
+
+# Network discovery for Daikin local API
+# netifaces>=0.11.0 

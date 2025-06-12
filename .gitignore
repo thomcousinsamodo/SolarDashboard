@@ -302,6 +302,13 @@ account_info.txt
 *.api_key
 *.credentials
 
+# Daikin API credentials and exploration results
+daikin/daikin_credentials.txt
+daikin/daikin_*.txt
+daikin/daikin_*.json
+daikin/*.json
+daikin_api_exploration_report.md
+
 # Consumption and Pricing Data Files (may contain personal energy usage)
 octopus_consumption_*.csv
 pricing_raw.csv
